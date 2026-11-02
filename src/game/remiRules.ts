@@ -468,11 +468,45 @@ function getCombinations<T>(arr: T[], k: number): T[][] {
 }
 
 /**
+ * Poin pemenang utama game (1000 Poin)
+ */
+export const WINNING_SCORE = 1000;
+
+export function check4Jokers(hand: Card[]): boolean {
+  return hand.filter((c) => c.rank === 'JOKER' || c.suit === 'joker').length >= 4;
+}
+
+export function getSuitSymbol(suit: Suit): string {
+  switch (suit) {
+    case 'spade':
+      return '♠';
+    case 'heart':
+      return '♥';
+    case 'diamond':
+      return '♦';
+    case 'club':
+      return '♣';
+    case 'joker':
+      return '🃏';
+  }
+}
+
+export function numberToRank(num: number, aceHigh = false): Rank {
+  if (num === 1 && !aceHigh) return 'A';
+  if (num === 14 && aceHigh) return 'A';
+  if (num === 11) return 'J';
+  if (num === 12) return 'Q';
+  if (num === 13) return 'K';
+  return String(num) as Rank;
+}
+
+/**
  * Calculates complete score breakdown according to rules:
  * Rule 5: 2-10 = 5 points, JQK = 10, Ace = 15, Joker = 25 (if Ace in A234 Dasar, Ace = 5).
  * Rule 9: If Dasar 4 exists -> valid melds score POSITIVE (+), deadwood is NEGATIVE (-).
  *         If NO Dasar 4 -> ALL cards in hand count NEGATIVE (-)!
- * Closing bonus: Ace +150, Joker +250.
+ * Poin untuk kartu penutup: langsung nilai tertinggi kartu (Ace +150, Joker +250), tidak dihitung poin dasarnya.
+ * Aturan Jackpot 4 Joker: Jika memiliki 4 Joker, langsung mendapatkan 1000 poin!
  */
 export function calculatePlayerScore(
   hand: Card[],
@@ -480,18 +514,46 @@ export function calculatePlayerScore(
   isClosingWinner = false,
   closeCard?: Card | null
 ): PlayerScoreBreakdown {
-  const evalResult = evaluateBestMelds(hand, customDasar4CardIds);
+  // 1. Aturan Jackpot 4 Joker (1000 Poin)
+  if (check4Jokers(hand)) {
+    const jokers = hand.filter((c) => c.rank === 'JOKER' || c.suit === 'joker');
+    return {
+      hasDasar4: true,
+      melds: [
+        {
+          type: 'tris',
+          cards: jokers,
+          points: 1000,
+        },
+      ],
+      meldPoints: 1000,
+      deadwood: [],
+      deadwoodPoints: 0,
+      closingBonus: 0,
+      totalPoints: 1000,
+      reason: '🌟 JACKPOT 4 JOKER! Langsung mendapatkan 1000 poin penuh!',
+    };
+  }
+
+  // 2. Poin kartu penutup tidak dihitung poin dasarnya, melainkan langsung poin tertingginya
+  // Oleh karena itu, jika pemenang menutup kartu, closeCard tidak dihitung sebagai kartu sisa (deadwood)
+  const scoringHand =
+    isClosingWinner && closeCard
+      ? hand.filter((c) => c.id !== closeCard.id)
+      : hand;
+
+  const evalResult = evaluateBestMelds(scoringHand, customDasar4CardIds);
   const hasDasar4 = evalResult.hasDasar4;
   const closingBonus = isClosingWinner && closeCard ? getClosingBonus(closeCard) : 0;
 
   if (!hasDasar4) {
     // Minus whole hand!
-    const totalNegative = hand.reduce((sum, c) => sum + getCardBasePoint(c), 0);
+    const totalNegative = scoringHand.reduce((sum, c) => sum + getCardBasePoint(c), 0);
     return {
       hasDasar4: false,
       melds: [],
       meldPoints: 0,
-      deadwood: hand,
+      deadwood: scoringHand,
       deadwoodPoints: totalNegative,
       closingBonus: 0,
       totalPoints: -totalNegative,
@@ -505,7 +567,7 @@ export function calculatePlayerScore(
 
   let reason = `Dasar 4 terpenuhi (+${meldPoints} poin kombinasi, -${deadwoodPoints} kartu sisa)`;
   if (closingBonus > 0) {
-    reason += ` + Bonus Tutup (${closeCard?.rank === 'JOKER' ? 'Joker +250' : 'Ace +150'})`;
+    reason += ` + Poin Kartu Penutup Tertinggi (${closeCard?.rank === 'JOKER' ? 'Joker +250' : 'Ace +150'})`;
   }
 
   return {
@@ -523,9 +585,9 @@ export function calculatePlayerScore(
 /**
  * Rule 7: Checks if a player can "Tutup" (Close / Win).
  * Conditions:
- * 1. Player has 14 cards (after drawing).
- * 2. Player can separate 13 cards into valid melds that MUST include at least one Dasar 4.
- * 3. The remaining 1 card (kartu penutup) MUST be an Ace or a Joker!
+ * 1. Player has 4 Jokers (Instant Win 1000 Poin), OR
+ * 2. Player has 14 cards (after drawing) and can separate 13 cards into valid melds that include Dasar 4,
+ *    and the remaining 1 card MUST be Ace or Joker.
  */
 export function checkCanTutup(
   hand: Card[],
@@ -534,7 +596,18 @@ export function checkCanTutup(
   canClose: boolean;
   closingCardCandidates: Card[];
   meldSetup?: Meld[];
+  is4JokerJackpot?: boolean;
 } {
+  // 4 Joker Jackpot Instant Win check!
+  if (check4Jokers(hand)) {
+    const jokers = hand.filter((c) => c.rank === 'JOKER' || c.suit === 'joker');
+    return {
+      canClose: true,
+      closingCardCandidates: jokers,
+      is4JokerJackpot: true,
+    };
+  }
+
   if (hand.length !== 14) {
     return { canClose: false, closingCardCandidates: [] };
   }
@@ -565,6 +638,201 @@ export function checkCanTutup(
     closingCardCandidates: closingCandidates,
     meldSetup: bestMeldSetup,
   };
+}
+
+/**
+ * Menganalisis kartu di tangan untuk mencari pola yang mendekati lengkap
+ * dan memberikan saran kartu yang dapat disubstitusi oleh Joker.
+ */
+export function findJokerSuggestions(hand: Card[]): import('./types').JokerSuggestion[] {
+  const jokers = hand.filter((c) => c.rank === 'JOKER' || c.suit === 'joker');
+  if (jokers.length === 0) return [];
+
+  const naturals = hand.filter((c) => c.rank !== 'JOKER' && c.suit !== 'joker');
+  const suggestions: import('./types').JokerSuggestion[] = [];
+  const primaryJoker = jokers[0];
+
+  // 1. Peluang Pola Tris (Angka Sama, Bunga Berbeda)
+  const rankGroups = new Map<Rank, Card[]>();
+  for (const c of naturals) {
+    if (!rankGroups.has(c.rank)) rankGroups.set(c.rank, []);
+    rankGroups.get(c.rank)!.push(c);
+  }
+
+  for (const [rank, cards] of rankGroups.entries()) {
+    // Cari kartu dengan bunga berbeda
+    const distinctSuits = new Map<Suit, Card>();
+    for (const c of cards) {
+      if (!distinctSuits.has(c.suit)) distinctSuits.set(c.suit, c);
+    }
+    const distinctCards = Array.from(distinctSuits.values());
+
+    // Pasangan 2 kartu -> Joker melengkapi Tris 3 kartu
+    if (distinctCards.length >= 2) {
+      const pair = distinctCards.slice(0, 2);
+      const usedSuits = new Set(pair.map((c) => c.suit));
+      const missingSuit = SUITS.find((s) => !usedSuits.has(s)) || 'heart';
+      const pts = pair.reduce((sum, c) => sum + getCardBasePoint(c), 0) + getCardBasePoint(pair[0]);
+
+      suggestions.push({
+        id: `tris_${rank}_${pair.map((c) => c.id).join('_')}`,
+        type: 'tris',
+        title: `Tris Angka ${rank}`,
+        description: `Joker menjadi ${rank}${getSuitSymbol(missingSuit)} melengkapi Tris (${pair.map((c) => c.rank + getSuitSymbol(c.suit)).join(', ')})`,
+        jokerCard: primaryJoker,
+        naturalCards: pair,
+        allMeldCards: [...pair, primaryJoker],
+        asCardDescription: `${rank}${getSuitSymbol(missingSuit)}`,
+        points: pts,
+      });
+    }
+
+    // 3 kartu angka sama -> Joker melengkapi 4 kartu (Quad)
+    if (distinctCards.length === 3) {
+      const triple = distinctCards.slice(0, 3);
+      const usedSuits = new Set(triple.map((c) => c.suit));
+      const missingSuit = SUITS.find((s) => !usedSuits.has(s)) || 'diamond';
+      const pts = triple.reduce((sum, c) => sum + getCardBasePoint(c), 0) + getCardBasePoint(triple[0]);
+
+      suggestions.push({
+        id: `tris4_${rank}_${triple.map((c) => c.id).join('_')}`,
+        type: 'tris',
+        title: `Kombinasi 4 Kartu ${rank}`,
+        description: `Joker menjadi ${rank}${getSuitSymbol(missingSuit)} melengkapi 4 kartu sejenis (${triple.map((c) => c.rank + getSuitSymbol(c.suit)).join(', ')})`,
+        jokerCard: primaryJoker,
+        naturalCards: triple,
+        allMeldCards: [...triple, primaryJoker],
+        asCardDescription: `${rank}${getSuitSymbol(missingSuit)}`,
+        points: pts,
+      });
+    }
+  }
+
+  // 2. Peluang Pola Urutan / Run (Bunga Sama, Angka Berurutan)
+  for (const suit of SUITS) {
+    const suitCards = naturals.filter((c) => c.suit === suit);
+    if (suitCards.length < 2) continue;
+
+    // Unik per rank
+    const uniqueByRank = new Map<Rank, Card>();
+    for (const c of suitCards) {
+      if (!uniqueByRank.has(c.rank)) uniqueByRank.set(c.rank, c);
+    }
+    const distinctList = Array.from(uniqueByRank.values());
+
+    for (const aceHigh of [false, true]) {
+      const sorted = [...distinctList].sort(
+        (a, b) => rankToNumber(a.rank, aceHigh) - rankToNumber(b.rank, aceHigh)
+      );
+
+      for (let i = 0; i < sorted.length - 1; i++) {
+        const c1 = sorted[i];
+        const c2 = sorted[i + 1];
+        const n1 = rankToNumber(c1.rank, aceHigh);
+        const n2 = rankToNumber(c2.rank, aceHigh);
+        const diff = n2 - n1;
+
+        // Celah 1 angka di tengah (misal 5 dan 7 -> Joker isi 6)
+        if (diff === 2) {
+          const filledNum = n1 + 1;
+          const filledRank = numberToRank(filledNum, aceHigh);
+          const pts =
+            getCardBasePoint(c1) +
+            getCardBasePoint(c2) +
+            (filledRank === 'A' ? (aceHigh ? 15 : 5) : filledNum >= 11 ? 10 : 5);
+
+          suggestions.push({
+            id: `run_gap_${c1.id}_${c2.id}_${aceHigh ? 'high' : 'low'}`,
+            type: 'run',
+            title: `Urutan ${c1.rank}-${filledRank}-${c2.rank} ${getSuitSymbol(suit)}`,
+            description: `Joker mengisi ${filledRank}${getSuitSymbol(suit)} di antara ${c1.rank}${getSuitSymbol(suit)} dan ${c2.rank}${getSuitSymbol(suit)}`,
+            jokerCard: primaryJoker,
+            naturalCards: [c1, c2],
+            allMeldCards: [c1, primaryJoker, c2],
+            asCardDescription: `${filledRank}${getSuitSymbol(suit)}`,
+            points: pts,
+          });
+        }
+
+        // Berurutan (misal 5 dan 6 -> Joker bisa isi awalan 4 atau akhiran 7)
+        if (diff === 1) {
+          // Isi awalan (sebelum c1)
+          const minBound = aceHigh ? 10 : 1;
+          if (n1 > minBound) {
+            const filledRank = numberToRank(n1 - 1, aceHigh);
+            suggestions.push({
+              id: `run_below_${c1.id}_${c2.id}_${aceHigh ? 'high' : 'low'}`,
+              type: 'run',
+              title: `Urutan ${filledRank}-${c1.rank}-${c2.rank} ${getSuitSymbol(suit)}`,
+              description: `Joker mengisi awalan ${filledRank}${getSuitSymbol(suit)} sebelum ${c1.rank}${getSuitSymbol(suit)}-${c2.rank}${getSuitSymbol(suit)}`,
+              jokerCard: primaryJoker,
+              naturalCards: [c1, c2],
+              allMeldCards: [primaryJoker, c1, c2],
+              asCardDescription: `${filledRank}${getSuitSymbol(suit)}`,
+              points: 15,
+            });
+          }
+
+          // Isi akhiran (setelah c2)
+          const maxBound = aceHigh ? 14 : 13;
+          if (n2 < maxBound) {
+            const filledRank = numberToRank(n2 + 1, aceHigh);
+            suggestions.push({
+              id: `run_above_${c1.id}_${c2.id}_${aceHigh ? 'high' : 'low'}`,
+              type: 'run',
+              title: `Urutan ${c1.rank}-${c2.rank}-${filledRank} ${getSuitSymbol(suit)}`,
+              description: `Joker mengisi akhiran ${filledRank}${getSuitSymbol(suit)} setelah ${c1.rank}${getSuitSymbol(suit)}-${c2.rank}${getSuitSymbol(suit)}`,
+              jokerCard: primaryJoker,
+              naturalCards: [c1, c2],
+              allMeldCards: [c1, c2, primaryJoker],
+              asCardDescription: `${filledRank}${getSuitSymbol(suit)}`,
+              points: 15,
+            });
+          }
+        }
+      }
+
+      // Periksa 3 kartu berurutan untuk diperpanjang menjadi 4 kartu
+      for (let i = 0; i < sorted.length - 2; i++) {
+        const c1 = sorted[i];
+        const c2 = sorted[i + 1];
+        const c3 = sorted[i + 2];
+        const n1 = rankToNumber(c1.rank, aceHigh);
+        const n2 = rankToNumber(c2.rank, aceHigh);
+        const n3 = rankToNumber(c3.rank, aceHigh);
+
+        if (n2 === n1 + 1 && n3 === n2 + 1) {
+          const maxBound = aceHigh ? 14 : 13;
+          if (n3 < maxBound) {
+            const filledRank = numberToRank(n3 + 1, aceHigh);
+            suggestions.push({
+              id: `run4_above_${c1.id}_${c3.id}_${aceHigh ? 'high' : 'low'}`,
+              type: 'run',
+              title: `Urutan 4 Kartu ${getSuitSymbol(suit)}`,
+              description: `Joker melengkapi ${c1.rank}-${c2.rank}-${c3.rank} menjadi 4 kartu (${filledRank}${getSuitSymbol(suit)})`,
+              jokerCard: primaryJoker,
+              naturalCards: [c1, c2, c3],
+              allMeldCards: [c1, c2, c3, primaryJoker],
+              asCardDescription: `${filledRank}${getSuitSymbol(suit)}`,
+              points: 20,
+            });
+          }
+        }
+      }
+    }
+  }
+
+  // Hapus duplikasi berdasarkan judul
+  const seen = new Set<string>();
+  const uniqueSuggestions: import('./types').JokerSuggestion[] = [];
+  for (const s of suggestions) {
+    if (!seen.has(s.title)) {
+      seen.add(s.title);
+      uniqueSuggestions.push(s);
+    }
+  }
+
+  return uniqueSuggestions.sort((a, b) => b.points - a.points);
 }
 
 /**

@@ -59,11 +59,25 @@ export interface Player {
   isTahan: boolean;
   customDasar4CardIds: string[];
   uid?: string; // Firebase Auth user UID
+  discardedCards: Card[]; // History of cards discarded by this player in current round
+  has4Jokers?: boolean;
 }
 
 export type GameStage = 'title' | 'playing' | 'roundOver' | 'paused';
 
 export type TurnPhase = 'draw' | 'discard';
+
+export interface JokerSuggestion {
+  id: string;
+  type: 'run' | 'tris';
+  title: string;
+  description: string;
+  jokerCard: Card;
+  naturalCards: Card[];
+  allMeldCards: Card[];
+  asCardDescription: string;
+  points: number;
+}
 
 export interface GameState {
   gameMode: GameMode;
@@ -81,7 +95,7 @@ export interface GameState {
   lastWinnerId: string | null;
   closeCard: Card | null;
   closeBonus: number;
-  endReason: 'tutup' | 'stock_empty' | null;
+  endReason: 'tutup' | 'stock_empty' | 'jackpot_4_joker' | null;
   scoresHistory: { round: number; scores: { playerId: string; roundScore: number; totalScore: number }[] }[];
   roomCode: string | null;
   isHost?: boolean;
@@ -89,4 +103,6 @@ export interface GameState {
   lastAction?: string;
   updatedAt?: number;
   hostUid?: string;
+  isGameOver?: boolean; // True when any player reaches >= 1000 points
+  grandWinnerId?: string | null;
 }

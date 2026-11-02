@@ -9,6 +9,9 @@ import {
   checkCanTutup,
   getCardBasePoint,
   evaluateBestMelds,
+  check4Jokers,
+  findJokerSuggestions,
+  WINNING_SCORE,
 } from './remiRules';
 import { Card } from './types';
 
@@ -240,5 +243,90 @@ test('New Requirement: Player can explicitly pick custom Dasar 4', () => {
   const chosenDasar = result.melds.find((m) => m.type === 'dasar4');
   assert.equal(chosenDasar?.cards.every((c) => c.suit === 'heart'), true);
 });
+
+test('New Requirement: 4 Jokers Jackpot awards 1000 points immediately', () => {
+  const handWith4Jokers = [
+    makeCard('JOKER', 'joker', 'j1'),
+    makeCard('JOKER', 'joker', 'j2'),
+    makeCard('JOKER', 'joker', 'j3'),
+    makeCard('JOKER', 'joker', 'j4'),
+    makeCard('2', 'spade', 's2'),
+    makeCard('7', 'heart', 'h7'),
+  ];
+
+  assert.equal(check4Jokers(handWith4Jokers), true);
+
+  const score = calculatePlayerScore(handWith4Jokers);
+  assert.equal(score.totalPoints, 1000);
+  assert.equal(score.meldPoints, 1000);
+  assert.equal(score.deadwoodPoints, 0);
+
+  const canClose = checkCanTutup(handWith4Jokers);
+  assert.equal(canClose.canClose, true);
+  assert.equal(canClose.is4JokerJackpot, true);
+});
+
+test('New Requirement: Closing card is not penalized as deadwood and directly awards highest card value', () => {
+  // Hand with Dasar 4: 5♥, 6♥, 7♥, 8♥ (20 pts)
+  // Plus closing card Ace of Spades (+150 pts)
+  const closeAce = makeCard('A', 'spade', 'close_ace');
+  const fullHand = [
+    makeCard('5', 'heart', 'h5'),
+    makeCard('6', 'heart', 'h6'),
+    makeCard('7', 'heart', 'h7'),
+    makeCard('8', 'heart', 'h8'),
+    closeAce,
+  ];
+
+  // When evaluated as closing winner, closeAce should NOT be counted in deadwood
+  const score = calculatePlayerScore(fullHand, undefined, true, closeAce);
+  assert.equal(score.deadwoodPoints, 0);
+  assert.equal(score.meldPoints, 20);
+  assert.equal(score.closingBonus, 150);
+  assert.equal(score.totalPoints, 170); // 20 + 150 = 170
+
+  // Closing with Joker (+250 pts)
+  const closeJoker = makeCard('JOKER', 'joker', 'close_joker');
+  const fullHandWithJoker = [
+    makeCard('5', 'heart', 'h5_2'),
+    makeCard('6', 'heart', 'h6_2'),
+    makeCard('7', 'heart', 'h7_2'),
+    makeCard('8', 'heart', 'h8_2'),
+    closeJoker,
+  ];
+  const scoreJoker = calculatePlayerScore(fullHandWithJoker, undefined, true, closeJoker);
+  assert.equal(scoreJoker.deadwoodPoints, 0);
+  assert.equal(scoreJoker.closingBonus, 250);
+  assert.equal(scoreJoker.totalPoints, 270); // 20 + 250 = 270
+});
+
+test('New Requirement: findJokerSuggestions finds gap in Run and pair in Tris', () => {
+  const joker = makeCard('JOKER', 'joker', 'jk1');
+  // Hand with 5♥, 7♥ (gap at 6♥) and K♠, K♥ (pair for Tris)
+  const hand = [
+    joker,
+    makeCard('5', 'heart', 'h5'),
+    makeCard('7', 'heart', 'h7'),
+    makeCard('K', 'spade', 'ks'),
+    makeCard('K', 'heart', 'kh'),
+  ];
+
+  const suggestions = findJokerSuggestions(hand);
+  assert.ok(suggestions.length >= 2, 'Should find at least 2 suggestions');
+
+  // Check Run gap suggestion (5♥ - 6♥ - 7♥)
+  const runGap = suggestions.find((s) => s.type === 'run' && s.title.includes('5-6-7'));
+  assert.ok(runGap, 'Should find 5-6-7 run gap suggestion');
+  assert.equal(runGap?.asCardDescription, '6♥');
+
+  // Check Tris pair suggestion (K Tris)
+  const trisK = suggestions.find((s) => s.type === 'tris' && s.title.includes('Tris Angka K'));
+  assert.ok(trisK, 'Should find K Tris suggestion');
+});
+
+test('New Requirement: WINNING_SCORE is 1000 points', () => {
+  assert.equal(WINNING_SCORE, 1000);
+});
+
 
 

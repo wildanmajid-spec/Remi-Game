@@ -66,6 +66,7 @@ function initializePlayers(
       isTahan: false,
       customDasar4CardIds: [],
       uid: userUid,
+      discardedCards: [],
     },
   ];
 
@@ -86,6 +87,7 @@ function initializePlayers(
       hasDasar4: false,
       isTahan: false,
       customDasar4CardIds: [],
+      discardedCards: [],
     });
   }
 
@@ -334,6 +336,8 @@ export default function App() {
             lastDiscardedCard: null,
             isTahan: false,
             customDasar4CardIds: [],
+            discardedCards: [],
+            has4Jokers: false,
           }))
         : initializePlayers(activeCount, hostName, mode, hostUid);
 
@@ -381,6 +385,8 @@ export default function App() {
         localPlayerId: 'p_0',
         hostUid,
         lastAction: `Meja dibuka oleh ${hostName}`,
+        isGameOver: false,
+        grandWinnerId: null,
       };
 
       setGameState(finalState);
@@ -478,10 +484,22 @@ export default function App() {
 
   // End round evaluation
   const handleEndRound = useCallback(
-    (reason: 'tutup' | 'stock_empty', winnerId: string | null, closeCard: Card | null) => {
+    (
+      reason: 'tutup' | 'stock_empty' | 'jackpot_4_joker',
+      winnerId: string | null,
+      closeCard: Card | null
+    ) => {
       setGameState((prev) => {
-        const isWinnerClose = reason === 'tutup';
-        const closeBonus = isWinnerClose && closeCard ? getClosingBonus(closeCard) : 0;
+        const isWinnerClose = reason === 'tutup' || reason === 'jackpot_4_joker';
+        const closeBonus =
+          reason === 'jackpot_4_joker'
+            ? 1000
+            : isWinnerClose && closeCard
+            ? getClosingBonus(closeCard)
+            : 0;
+
+        let hasGrandWinner = false;
+        let grandWinnerId: string | null = null;
 
         const updatedPlayers = prev.players.map((p) => {
           const isWinner = isWinnerClose && p.id === winnerId;
@@ -491,16 +509,24 @@ export default function App() {
             isWinner,
             closeCard
           );
-          const addedScore = breakdown.totalPoints;
+          const addedScore =
+            reason === 'jackpot_4_joker' && isWinner ? 1000 : breakdown.totalPoints;
+          const newTotalScore = p.score + addedScore;
+
+          if (newTotalScore >= 1000) {
+            hasGrandWinner = true;
+            if (!grandWinnerId) grandWinnerId = p.id;
+          }
+
           return {
             ...p,
             roundScore: addedScore,
-            score: p.score + addedScore,
+            score: newTotalScore,
             hasDasar4: breakdown.hasDasar4,
           };
         });
 
-        if (reason === 'tutup') {
+        if (reason === 'tutup' || reason === 'jackpot_4_joker') {
           sounds.playWinFanfare();
         } else {
           sounds.playCardSnap();
@@ -508,7 +534,9 @@ export default function App() {
 
         const winnerName = prev.players.find((p) => p.id === winnerId)?.name || 'Pemain';
         const actionText =
-          reason === 'tutup'
+          reason === 'jackpot_4_joker'
+            ? `🌟 ${winnerName} MENDAPATKAN JACKPOT 4 JOKER (1000 POIN)!`
+            : reason === 'tutup'
             ? `${winnerName} MENUTUP KARTU (${closeCard?.rank} ${closeCard?.suit})!`
             : 'Kartu tengah habis, ronde berakhir';
 
@@ -521,6 +549,8 @@ export default function App() {
           closeBonus,
           endReason: reason,
           lastAction: actionText,
+          isGameOver: hasGrandWinner,
+          grandWinnerId: grandWinnerId || (hasGrandWinner ? winnerId : null),
         };
 
         syncToFirebase(newState, actionText);
@@ -530,15 +560,36 @@ export default function App() {
     [syncToFirebase]
   );
 
-  // Human: Draw from Stock
+  // Human: Draw from Stock (with 6-player auto-reshuffle from discards)
   const handleDrawFromStock = () => {
-    if (gameState.stockPile.length === 0) return;
+    let activeStock = [...gameState.stockPile];
+    let reshuffledCount = gameState.stockReshuffleCount;
+    let updatedHistory = [...gameState.discardHistory];
+
+    if (activeStock.length === 0) {
+      if (gameState.playerCount === 6 && updatedHistory.length > 0) {
+        // Collect discarded cards to reshuffle into stock
+        const cardsToShuffle = updatedHistory.map((h) => h.card);
+        activeStock = shuffleDeck(cardsToShuffle);
+        reshuffledCount += 1;
+        updatedHistory = [];
+        sounds.playCardDeal();
+      } else {
+        // End of round if cannot reshuffle
+        handleEndRound('stock_empty', null, null);
+        return;
+      }
+    }
+
     sounds.playCardDeal();
 
-    const drawnCard = gameState.stockPile[0];
-    const newStock = gameState.stockPile.slice(1);
+    const drawnCard = activeStock[0];
+    const newStock = activeStock.slice(1);
     const playerName = gameState.players[effectiveLocalIndex]?.name || 'Pemain';
-    const actionDesc = `${playerName} mengambil kartu tengah`;
+    const actionDesc =
+      reshuffledCount > gameState.stockReshuffleCount
+        ? `Kartu tengah dikocok ulang dari buangan! ${playerName} mengambil kartu tengah`
+        : `${playerName} mengambil kartu tengah`;
 
     setGameState((prev) => {
       const updatedPlayers = [...prev.players];
@@ -550,6 +601,8 @@ export default function App() {
       const newState: GameState = {
         ...prev,
         stockPile: newStock,
+        stockReshuffleCount: reshuffledCount,
+        discardHistory: updatedHistory,
         players: updatedPlayers,
         turnPhase: 'discard',
         lastAction: actionDesc,
@@ -606,11 +659,13 @@ export default function App() {
 
     setGameState((prev) => {
       const newHand = prev.players[effectiveLocalIndex].hand.filter((c) => c.id !== cardId);
+      const currentDiscarded = prev.players[effectiveLocalIndex].discardedCards || [];
       const updatedPlayers = [...prev.players];
       updatedPlayers[effectiveLocalIndex] = {
         ...updatedPlayers[effectiveLocalIndex],
         hand: newHand,
         lastDiscardedCard: cardToDiscard,
+        discardedCards: [...currentDiscarded, cardToDiscard],
       };
 
       const newState: GameState = {
@@ -712,6 +767,25 @@ export default function App() {
     });
   };
 
+  // Human: Update whole hand (e.g. from Joker Pattern assistant)
+  const handleUpdateHand = (newHand: Card[]) => {
+    setGameState((prev) => {
+      const updated = [...prev.players];
+      updated[effectiveLocalIndex] = { ...updated[effectiveLocalIndex], hand: newHand };
+      return { ...prev, players: updated };
+    });
+  };
+
+  // Human: Claim 4 Jokers Jackpot (1000 Poin)
+  const handleClaim4Jokers = () => {
+    const jokers = gameState.players[effectiveLocalIndex].hand.filter(
+      (c) => c.rank === 'JOKER' || c.suit === 'joker'
+    );
+    if (jokers.length < 4) return;
+    sounds.playWinFanfare();
+    handleEndRound('jackpot_4_joker', gameState.players[effectiveLocalIndex].id, null);
+  };
+
   // Bot Turn Automated Runner (runs ONLY in 'bot' mode or when AI seats are present and active)
   useEffect(() => {
     if (gameState.stage !== 'playing') return;
@@ -797,11 +871,13 @@ export default function App() {
       const actionDesc = `${bot.name} membuang ${discardCard.rank} ${discardCard.suit}`;
 
       setGameState((prev) => {
+        const botDiscarded = prev.players[botIndex].discardedCards || [];
         const updatedPlayers = [...prev.players];
         updatedPlayers[botIndex] = {
           ...updatedPlayers[botIndex],
           hand: finalBotHand,
           lastDiscardedCard: discardCard,
+          discardedCards: [...botDiscarded, discardCard],
         };
 
         const newState: GameState = {
@@ -1024,6 +1100,8 @@ export default function App() {
           onReorderHand={handleReorderHand}
           isOnlineRoom={gameState.gameMode === 'player'}
           lastActionText={gameState.lastAction}
+          onClaim4Jokers={handleClaim4Jokers}
+          onUpdateHand={handleUpdateHand}
         />
       )}
 
@@ -1037,6 +1115,8 @@ export default function App() {
         roundNumber={gameState.roundNumber}
         onNextRound={() => startNewRound(gameState.playerCount, gameState.roundNumber + 1, gameState.players)}
         onRestartGame={() => startNewRound(gameState.playerCount, 1)}
+        isGameOver={gameState.isGameOver}
+        onCreateNewRoom={handleExitToTitle}
       />
 
       {/* Pause Modal */}

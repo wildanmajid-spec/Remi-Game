@@ -1,5 +1,5 @@
 import React from 'react';
-import { X, BookOpen, AlertCircle, CheckCircle2, Award, Shuffle } from 'lucide-react';
+import { X, BookOpen, AlertCircle, CheckCircle2, Award, Shuffle, Sparkles, Trophy } from 'lucide-react';
 
 interface RulesModalProps {
   isOpen: boolean;
@@ -27,7 +27,7 @@ export const RulesModal: React.FC<RulesModalProps> = ({ isOpen, onClose }) => {
               <h2 id="rules-modal-title" className="text-xl font-bold font-serif text-amber-300">
                 Peraturan Permainan REMI
               </h2>
-              <p className="text-xs text-slate-400">Panduan lengkap 9 aturan resmi Remi Tradisional</p>
+              <p className="text-xs text-slate-400">Panduan lengkap aturan resmi Remi Tradisional & Jackpot</p>
             </div>
           </div>
           <button
@@ -48,33 +48,37 @@ export const RulesModal: React.FC<RulesModalProps> = ({ isOpen, onClose }) => {
               1
             </span>
             <div>
-              <h4 className="font-bold text-amber-300 mb-1">Set Kartu & Pembagian (108 Kartu)</h4>
+              <h4 className="font-bold text-amber-300 mb-1">Set Kartu (104 Standar + 4 Joker = 108 Kartu) & Jackpot</h4>
               <p className="text-xs text-slate-300 leading-relaxed">
                 Menggunakan <strong>2 set kartu remi standar (104 kartu) + 4 kartu Joker</strong> (Total 108 kartu). Setiap pemain (4 sampai 6 orang) dibagikan <strong>13 kartu</strong>. Sisa kartu diletakkan di tengah sebagai tumpukan pengambilan (Stock Pile).
               </p>
+              <div className="mt-2 p-2 rounded-lg bg-purple-950/60 border border-purple-500/40 text-xs text-purple-200 flex items-center gap-2">
+                <Sparkles className="w-4 h-4 text-amber-400 shrink-0" />
+                <span><strong>Jackpot 4 Joker (1000 Poin)</strong>: Jika pemain berhasil mengumpulkan <strong>4 kartu Joker lengkap</strong> di tangannya, langsung mendapatkan <strong>1000 poin</strong> dan memenangkan permainan!</span>
+              </div>
             </div>
           </div>
 
-          {/* Rule 2 & 6 */}
+          {/* Rule 2 */}
           <div className="p-3.5 rounded-xl bg-slate-800/70 border border-slate-700 flex gap-3">
             <span className="w-6 h-6 rounded-full bg-amber-500 text-slate-950 font-black flex items-center justify-center text-xs shrink-0">
               2
             </span>
             <div>
-              <h4 className="font-bold text-amber-300 mb-1">Giliran Ambil & Buang ke Sebelah Kanan</h4>
+              <h4 className="font-bold text-amber-300 mb-1">Giliran Ambil, Buang ke Kanan & Riwayat Buangan</h4>
               <p className="text-xs text-slate-300 leading-relaxed">
-                Pemain secara bergiliran mengambil 1 kartu (bisa dari tumpukan tengah atau kartu buangan terakhir dari lawan di sebelah kiri), lalu wajib membuang 1 kartu ke <strong>lawan di sebelah kanannya</strong>.
+                Pemain secara bergiliran mengambil 1 kartu (bisa dari tumpukan tengah atau kartu buangan terakhir dari lawan di sebelah kiri), lalu wajib membuang 1 kartu ke <strong>lawan di sebelah kanannya</strong>. Pemain dapat membuka menu <strong>Riwayat Buangan</strong> untuk memantau kartu yang telah dibuang oleh setiap pemain.
               </p>
             </div>
           </div>
 
-          {/* Rule 3 & 4 */}
+          {/* Rule 3 */}
           <div className="p-3.5 rounded-xl bg-emerald-950/40 border border-emerald-500/40 flex gap-3">
             <span className="w-6 h-6 rounded-full bg-emerald-500 text-slate-950 font-black flex items-center justify-center text-xs shrink-0">
               3
             </span>
             <div>
-              <h4 className="font-bold text-emerald-300 mb-1">Kombinasi & Syarat Wajib "Dasar 4"</h4>
+              <h4 className="font-bold text-emerald-300 mb-1">Syarat Wajib "Dasar 4" & Bantuan Substitusi Joker</h4>
               <p className="text-xs text-slate-300 leading-relaxed">
                 Tujuan utama adalah menyusun kombinasi kartu:
               </p>
@@ -89,13 +93,13 @@ export const RulesModal: React.FC<RulesModalProps> = ({ isOpen, onClose }) => {
                   <strong>Tris</strong>: 3 atau 4 kartu angka sama dengan bunga berbeda (contoh: 7♠-7♥-7♦).
                 </li>
                 <li>
-                  <strong className="text-purple-300">Joker</strong>: Hanya bisa menjadi kartu pengganti/wildcard <em>setelah pemain memiliki Dasar 4</em> atau digabung dengan susunan J-Q-K-A.
+                  <strong className="text-purple-300">Joker Pengisi Semua Kartu</strong>: Joker dapat mengisi semua kartu dan membentuk pola yang diinginkan. Tekan tombol <strong>🃏 Pola Joker</strong> untuk melihat daftar pilihan pola yang mendekati dari kartu yang Anda miliki!
                 </li>
               </ul>
             </div>
           </div>
 
-          {/* Rule 5 */}
+          {/* Rule 4 */}
           <div className="p-3.5 rounded-xl bg-slate-800/70 border border-slate-700 flex gap-3">
             <span className="w-6 h-6 rounded-full bg-amber-500 text-slate-950 font-black flex items-center justify-center text-xs shrink-0">
               4
@@ -124,46 +128,43 @@ export const RulesModal: React.FC<RulesModalProps> = ({ isOpen, onClose }) => {
             </div>
           </div>
 
-          {/* Rule 7 */}
+          {/* Rule 5 */}
           <div className="p-3.5 rounded-xl bg-amber-950/30 border border-amber-500/40 flex gap-3">
             <span className="w-6 h-6 rounded-full bg-amber-500 text-slate-950 font-black flex items-center justify-center text-xs shrink-0">
               5
             </span>
             <div>
-              <h4 className="font-bold text-amber-300 mb-1">Menutup Kartu (Tutup), Tombol "Tahan" & Bonus Poin</h4>
+              <h4 className="font-bold text-amber-300 mb-1">Poin Kartu Penutup Tertinggi & Syarat Menutup</h4>
               <p className="text-xs text-slate-300 leading-relaxed mb-1.5">
-                Permainan berakhir jika ada pemain yang berhasil menyusun seluruh kartunya menjadi kombinasi valid (termasuk Dasar 4), dan <strong>kartu penutup terakhir yang dibuang WAJIB merupakan kartu Ace atau Joker</strong>!
+                Pemain dapat menutup kartu jika 13 kartunya telah tersusun dalam kombinasi sah (termasuk Dasar 4), dan <strong>kartu penutup ke-14 WAJIB Ace atau Joker</strong>.
               </p>
               <ul className="list-disc list-inside text-xs text-slate-300 space-y-1">
                 <li>
-                  <strong className="text-red-400">Wajib Tombol "Tahan"</strong>: Pemain wajib menekan tombol <strong>"Tahan"</strong> yang bertanda akan ditutup dengan pemain yang kekurangan dasar ataupun pola yang belum pas untuk mengunci dan menghukum lawan!
+                  <strong className="text-amber-400">Poin Langsung Nilai Tertinggi</strong>: Kartu penutup <strong>tidak dihitung lagi poin dasarnya</strong>, melainkan langsung mendapat nilai tertinggi kartu tersebut: <strong>+150 poin untuk Ace</strong> dan <strong>+250 poin untuk Joker</strong>!
                 </li>
                 <li>
-                  <strong className="text-amber-400">Bonus Penutup Ace</strong>: Tutup dengan Ace menambah <strong>+150 poin</strong>.
-                </li>
-                <li>
-                  <strong className="text-purple-400">Bonus Penutup Joker</strong>: Tutup dengan Joker menambah <strong>+250 poin</strong>!
-                </li>
-                <li>
-                  <strong className="text-emerald-400">Pilih Dasar 4 & Drag</strong>: Pemain dapat memilih Dasar 4 yang diinginkan secara manual dengan menarik (*drag*) kartu ke Area Dasar 4.
+                  <strong className="text-red-400">Tombol Tahan</strong>: Wajib mengaktifkan tombol TAHAN saat bersiap menutup untuk mengunci lawan.
                 </li>
               </ul>
             </div>
           </div>
 
-          {/* Rule 8 & 9 */}
+          {/* Rule 6 */}
           <div className="p-3.5 rounded-xl bg-red-950/30 border border-red-500/40 flex gap-3">
             <span className="w-6 h-6 rounded-full bg-red-500 text-slate-950 font-black flex items-center justify-center text-xs shrink-0">
               6
             </span>
             <div>
-              <h4 className="font-bold text-red-300 mb-1">Aturan Kartu Habis & Penalti Tanpa Dasar 4</h4>
+              <h4 className="font-bold text-red-300 mb-1">Kocok Ulang 6 Orang & Pemenang 1000 Poin</h4>
               <ul className="list-disc list-inside text-xs text-slate-300 space-y-1">
                 <li>
-                  <strong>Tumpukan Habis</strong>: Jika bermain <strong>6 pemain</strong>, tumpukan tengah yang habis dapat di-shuffle kembali. Jika 4 atau 5 pemain, permainan langsung berakhir dan dihitung poin.
+                  <strong className="text-emerald-400">Kocok Ulang Meja 6 Orang</strong>: Pada permainan 6 orang, jika kartu tengah habis, tumpukan pengambilan <strong>otomatis dikocok ulang (reshuffle)</strong> dari seluruh riwayat kartu buangan.
                 </li>
                 <li>
-                  <strong className="text-red-400">Aturan Minus Total</strong>: Jika seorang pemain <strong>TIDAK MEMILIKI Dasar 4</strong> saat ronde berakhir, seluruh kartunya dihitung <strong>NEGATIF (MINUS)</strong>! Jika memiliki Dasar 4, kombinasi bernilai plus dan kartu sisa yang belum terpasang bernilai minus.
+                  <strong className="text-amber-400">Target Kemenangan 1000 Poin</strong>: Poin untuk pemenang utama game adalah <strong>1000 poin</strong>. Jika ada pemain yang mencapai 1000 poin, permainan <strong>langsung berakhir</strong> dan pemain harus <strong>membuat room baru</strong>.
+                </li>
+                <li>
+                  <strong className="text-red-400">Penalti Tanpa Dasar 4</strong>: Pemain yang tidak memiliki Dasar 4 saat ronde berakhir dikenakan nilai <strong>minus seluruh kartu di tangannya</strong>.
                 </li>
               </ul>
             </div>

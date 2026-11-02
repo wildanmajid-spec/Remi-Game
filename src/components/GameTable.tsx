@@ -17,16 +17,21 @@ import {
   Check,
   Copy,
   LogOut,
+  History,
 } from 'lucide-react';
-import { GameState, Card, Meld } from '../game/types';
+import { GameState, Card, Meld, JokerSuggestion } from '../game/types';
 import { CardView } from './CardView';
 import { PlayerSeat } from './PlayerSeat';
+import { JokerSuggestionsModal } from './JokerSuggestionsModal';
+import { DiscardHistoryModal } from './DiscardHistoryModal';
 import {
   evaluateBestMelds,
   checkCanTutup,
   calculatePlayerScore,
   isDasar4,
   getClosingBonus,
+  findJokerSuggestions,
+  check4Jokers,
 } from '../game/remiRules';
 
 interface GameTableProps {
@@ -52,6 +57,8 @@ interface GameTableProps {
   onReorderHand: (draggedCardId: string, targetCardId: string) => void;
   isOnlineRoom?: boolean;
   lastActionText?: string;
+  onClaim4Jokers?: () => void;
+  onUpdateHand?: (cards: Card[]) => void;
 }
 
 export const GameTable: React.FC<GameTableProps> = ({
@@ -77,6 +84,8 @@ export const GameTable: React.FC<GameTableProps> = ({
   onReorderHand,
   isOnlineRoom = false,
   lastActionText,
+  onClaim4Jokers,
+  onUpdateHand,
 }) => {
   const {
     players,
@@ -92,6 +101,8 @@ export const GameTable: React.FC<GameTableProps> = ({
   const [isDropZoneOver, setIsDropZoneOver] = useState(false);
   const [showDasarBuilder, setShowDasarBuilder] = useState(false);
   const [copiedToast, setCopiedToast] = useState(false);
+  const [showJokerModal, setShowJokerModal] = useState(false);
+  const [showDiscardHistory, setShowDiscardHistory] = useState(false);
 
   const localPlayerId = gameState.localPlayerId || 'p_0';
   const localPlayerIndex = players.findIndex((p) => p.id === localPlayerId);
@@ -105,6 +116,22 @@ export const GameTable: React.FC<GameTableProps> = ({
   const evalResult = evaluateBestMelds(humanPlayer.hand, customDasar4CardIds);
   const scoreBreakdown = calculatePlayerScore(humanPlayer.hand, customDasar4CardIds);
   const tutupCheck = checkCanTutup(humanPlayer.hand, customDasar4CardIds);
+
+  // 4 Jokers & Joker Pattern suggestions
+  const has4Jokers = check4Jokers(humanPlayer.hand);
+  const localHasJoker = humanPlayer.hand.some((c) => c.rank === 'JOKER' || c.suit === 'joker');
+  const jokerSuggestions = findJokerSuggestions(humanPlayer.hand);
+
+  const handleApplyJokerSuggestion = (suggestion: JokerSuggestion) => {
+    const meldIds = new Set(suggestion.allMeldCards.map((c) => c.id));
+    const meldCards = humanPlayer.hand.filter((c) => meldIds.has(c.id));
+    const rest = humanPlayer.hand.filter((c) => !meldIds.has(c.id));
+    const newHand = [...meldCards, ...rest];
+
+    if (onUpdateHand) {
+      onUpdateHand(newHand);
+    }
+  };
 
   // Neighbors (discard to player on the right)
   const rightNeighbor = players[(effectiveLocalIndex + 1) % players.length];
@@ -256,6 +283,21 @@ export const GameTable: React.FC<GameTableProps> = ({
 
         {/* Quick Utilities */}
         <div className="flex items-center gap-1.5 shrink-0">
+          {/* Discard History Button */}
+          <button
+            type="button"
+            onClick={() => setShowDiscardHistory(true)}
+            aria-label="Buka Riwayat Buangan Pemain"
+            title="Lihat riwayat buangan kartu setiap pemain"
+            className="flex items-center gap-1 px-2 py-1 rounded-lg bg-emerald-950/80 hover:bg-emerald-900 border border-emerald-700/60 text-[11px] font-semibold text-emerald-300 cursor-pointer transition-colors shadow-xs"
+          >
+            <History className="w-3.5 h-3.5 text-emerald-400" />
+            <span className="hidden sm:inline">Buangan</span>
+            <span className="text-[10px] bg-emerald-900 text-amber-300 px-1.5 py-0.2 rounded-full font-bold border border-emerald-600/40 tabular-nums">
+              {gameState.discardHistory.length}
+            </span>
+          </button>
+
           <button
             type="button"
             onClick={onOpenRules}
@@ -592,6 +634,17 @@ export const GameTable: React.FC<GameTableProps> = ({
 
             {/* Hand Organization Helpers */}
             <div className="flex items-center gap-1.5">
+              {localHasJoker && (
+                <button
+                  type="button"
+                  onClick={() => setShowJokerModal(true)}
+                  className="flex items-center gap-1 px-2.5 py-0.5 rounded text-[11px] font-black bg-purple-950/90 hover:bg-purple-900 text-purple-200 border border-purple-500/70 cursor-pointer shadow-md shadow-purple-950/50 animate-pulse"
+                  title="Pilihan pola yang dapat dibentuk oleh kartu Joker"
+                >
+                  <span className="text-xs">🃏</span>
+                  <span>Pola Joker ({jokerSuggestions.length})</span>
+                </button>
+              )}
               <button
                 type="button"
                 onClick={onSortBySuit}
@@ -693,8 +746,20 @@ export const GameTable: React.FC<GameTableProps> = ({
                   <span>Buang ke {rightNeighbor.name}</span>
                 </button>
 
+                {/* 4 Joker Jackpot Instant Claim Button */}
+                {has4Jokers && onClaim4Jokers && (
+                  <button
+                    type="button"
+                    onClick={onClaim4Jokers}
+                    className="flex items-center gap-1.5 px-4 sm:px-5 py-2 rounded-xl text-xs sm:text-sm font-black bg-gradient-to-r from-amber-400 via-yellow-300 to-amber-500 text-slate-950 shadow-xl shadow-amber-500/40 ring-2 ring-yellow-200 animate-bounce cursor-pointer"
+                  >
+                    <Sparkles className="w-4 h-4 fill-slate-950" />
+                    <span>🌟 KLAIM 4 JOKER (1000 POIN)!</span>
+                  </button>
+                )}
+
                 {/* Tutup & Menang Button (Shows Ace +150 / Joker +250 points, and requires TAHAN) */}
-                {tutupCheck.canClose && (
+                {tutupCheck.canClose && !has4Jokers && (
                   <button
                     type="button"
                     disabled={!isHumanTurn || turnPhase !== 'discard' || !isSelectedCardClosing}
@@ -725,6 +790,22 @@ export const GameTable: React.FC<GameTableProps> = ({
           </div>
         </div>
       </main>
+
+      {/* Discard History Modal */}
+      <DiscardHistoryModal
+        isOpen={showDiscardHistory}
+        onClose={() => setShowDiscardHistory(false)}
+        players={players}
+        activePlayerIndex={activePlayerIndex}
+      />
+
+      {/* Joker Suggestions Modal */}
+      <JokerSuggestionsModal
+        isOpen={showJokerModal}
+        onClose={() => setShowJokerModal(false)}
+        suggestions={jokerSuggestions}
+        onApplySuggestion={handleApplyJokerSuggestion}
+      />
     </div>
   );
 };
