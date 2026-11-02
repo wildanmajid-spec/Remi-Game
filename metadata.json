@@ -1,0 +1,6 @@
+{
+  "name": "REMI - Permainan Kartu Indonesia",
+  "description": "Permainan kartu Remi tradisional Indonesia untuk 4 sampai 6 pemain dengan multiplayer online real-time via Firebase, sistem Dasar 4, dan penutupan kartu Ace/Joker.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}

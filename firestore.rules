@@ -1,0 +1,63 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+    // 1. Global Safety Net - Default Deny
+    match /{document=**} {
+      allow read, write: if false;
+    }
+
+    // Helper functions
+    function isValidId(id) {
+      return id is string && id.size() <= 128 && id.matches('^[a-zA-Z0-9_\\-]+$');
+    }
+
+    function isSignedIn() {
+      return request.auth != null;
+    }
+
+    function isVerifiedUser() {
+      return isSignedIn() && request.auth.token.email_verified == true;
+    }
+
+    function isValidRoom(data) {
+      return data.roomCode is string &&
+             data.roomCode.size() <= 64 &&
+             data.hostUid is string &&
+             data.hostUid.size() <= 128 &&
+             data.gameState is map;
+    }
+
+    // Connection Healthcheck endpoint
+    match /test/connection {
+      allow read: if true;
+    }
+
+    // Remi Multiplayer Game Rooms
+    match /rooms/{roomCode} {
+      // Never allow blind list scraping of rooms; only direct room code access
+      allow list: if false;
+
+      // Allow get and real-time onSnapshot for authenticated players with valid room code
+      allow get: if isSignedIn() && isValidId(roomCode);
+
+      // Create new game room: Host must be verified and match authenticated UID
+      allow create: if isVerifiedUser() &&
+                       isValidId(roomCode) &&
+                       request.resource.data.hostUid == request.auth.uid &&
+                       request.resource.data.roomCode == roomCode &&
+                       isValidRoom(request.resource.data);
+
+      // Update game room: Players in room can sync card actions, preserving hostUid and roomCode
+      allow update: if isVerifiedUser() &&
+                       isValidId(roomCode) &&
+                       isValidRoom(request.resource.data) &&
+                       request.resource.data.roomCode == roomCode &&
+                       request.resource.data.hostUid == resource.data.hostUid;
+
+      // Only host can delete their room
+      allow delete: if isVerifiedUser() &&
+                       isValidId(roomCode) &&
+                       resource.data.hostUid == request.auth.uid;
+    }
+  }
+}

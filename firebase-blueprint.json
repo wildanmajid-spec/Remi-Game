@@ -1,0 +1,45 @@
+{
+  "entities": {
+    "Room": {
+      "title": "Room",
+      "description": "Multiplayer game room for Remi Indonesia",
+      "type": "object",
+      "properties": {
+        "roomCode": {
+          "type": "string",
+          "description": "Unique code for the game room"
+        },
+        "hostUid": {
+          "type": "string",
+          "description": "Firebase Auth UID of room host"
+        },
+        "playerUids": {
+          "type": "array",
+          "description": "Array of user IDs for connected players"
+        },
+        "gameState": {
+          "type": "object",
+          "description": "Full serialized synchronized game state"
+        },
+        "lastAction": {
+          "type": "string",
+          "description": "Description of the last card action performed"
+        },
+        "updatedAt": {
+          "type": "string",
+          "format": "date-time",
+          "description": "Timestamp of the last room update"
+        }
+      },
+      "required": ["roomCode", "hostUid", "gameState"]
+    }
+  },
+  "firestore": {
+    "/rooms/{roomCode}": {
+      "schema": {
+        "$ref": "#/entities/Room"
+      },
+      "description": "Real-time Remi multiplayer rooms"
+    }
+  }
+}
