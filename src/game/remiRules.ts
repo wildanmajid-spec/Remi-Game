@@ -1,4 +1,4 @@
-import { Card, Meld, MeldType, PlayerScoreBreakdown, Rank, Suit } from './types';
+import { Card, Meld, MeldType, PlayerScoreBreakdown, Rank, Suit, TahanCheckResult } from './types';
 
 export const SUITS: Suit[] = ['spade', 'heart', 'diamond', 'club'];
 export const RANKS: Rank[] = ['A', '2', '3', '4', '5', '6', '7', '8', '9', '10', 'J', 'Q', 'K'];
@@ -150,11 +150,11 @@ function canFormRunSequence(naturals: Card[], jokerCount: number, aceHigh: boole
 }
 
 /**
- * Checks if cards form a valid Tris (3 or 4 cards of same rank with different suits).
+ * Checks if cards form a valid Tris (exactly 3 cards of same rank with 3 different suits).
  * If allowJoker is true, jokers can substitute for missing cards.
  */
 export function isValidTris(cards: Card[], allowJoker = false): boolean {
-  if (cards.length < 3 || cards.length > 4) return false;
+  if (cards.length !== 3) return false;
 
   const jokers = cards.filter((c) => c.rank === 'JOKER');
   const naturals = cards.filter((c) => c.rank !== 'JOKER');
@@ -169,10 +169,30 @@ export function isValidTris(cards: Card[], allowJoker = false): boolean {
   const suitSet = new Set(naturals.map((c) => c.suit));
   if (suitSet.size !== naturals.length) return false;
 
-  // Total distinct suits cannot exceed 4
-  if (naturals.length + jokers.length > 4) return false;
+  return naturals.length + jokers.length === 3;
+}
 
-  return true;
+/**
+ * Checks if cards form a valid Fourhand (exactly 4 cards of same rank with 4 different suits / pitingan).
+ * If allowJoker is true, jokers can substitute for missing cards.
+ */
+export function isValidFourhand(cards: Card[], allowJoker = false): boolean {
+  if (cards.length !== 4) return false;
+
+  const jokers = cards.filter((c) => c.rank === 'JOKER');
+  const naturals = cards.filter((c) => c.rank !== 'JOKER');
+
+  if (jokers.length > 0 && !allowJoker) return false;
+  if (naturals.length === 0) return false;
+
+  const rank = naturals[0].rank;
+  if (!naturals.every((c) => c.rank === rank)) return false;
+
+  // Naturals must have different suits (4 bunga berbeda)
+  const suitSet = new Set(naturals.map((c) => c.suit));
+  if (suitSet.size !== naturals.length) return false;
+
+  return naturals.length + jokers.length === 4;
 }
 
 /**
@@ -330,11 +350,11 @@ export function evaluateBestMelds(
 function findOptimalSecondaryPartition(cards: Card[], allowJokers: boolean): Meld[] {
   if (cards.length < 3) return [];
 
-  // 1. Enumerate all possible candidate melds (runs and tris)
+  // 1. Enumerate all possible candidate melds (runs, fourhand, and tris)
   const candidateMelds: Meld[] = [];
 
-  // Find all runs of size 3, 4, 5
-  for (let size = 3; size <= Math.min(5, cards.length); size++) {
+  // Find all runs of size 3, 4, 5, 6
+  for (let size = 3; size <= Math.min(6, cards.length); size++) {
     const combos = getCombinations(cards, size);
     for (const combo of combos) {
       if (isValidRun(combo, allowJokers)) {
@@ -347,17 +367,29 @@ function findOptimalSecondaryPartition(cards: Card[], allowJokers: boolean): Mel
     }
   }
 
-  // Find all tris of size 3, 4
-  for (let size = 3; size <= Math.min(4, cards.length); size++) {
-    const combos = getCombinations(cards, size);
-    for (const combo of combos) {
-      if (isValidTris(combo, allowJokers)) {
+  // Find all Fourhand (size 4: 4 cards of same rank with 4 distinct suits)
+  if (cards.length >= 4) {
+    const combos4 = getCombinations(cards, 4);
+    for (const combo of combos4) {
+      if (isValidFourhand(combo, allowJokers)) {
         candidateMelds.push({
-          type: 'tris',
+          type: 'fourhand',
           cards: combo,
-          points: calculateMeldPoints({ type: 'tris', cards: combo }),
+          points: calculateMeldPoints({ type: 'fourhand', cards: combo }),
         });
       }
+    }
+  }
+
+  // Find all Tris (size 3: 3 cards of same rank with 3 distinct suits)
+  const combos3 = getCombinations(cards, 3);
+  for (const combo of combos3) {
+    if (isValidTris(combo, allowJokers)) {
+      candidateMelds.push({
+        type: 'tris',
+        cards: combo,
+        points: calculateMeldPoints({ type: 'tris', cards: combo }),
+      });
     }
   }
 
@@ -586,8 +618,8 @@ export function calculatePlayerScore(
  * Rule 7: Checks if a player can "Tutup" (Close / Win).
  * Conditions:
  * 1. Player has 4 Jokers (Instant Win 1000 Poin), OR
- * 2. Player has 14 cards (after drawing) and can separate 13 cards into valid melds that include Dasar 4,
- *    and the remaining 1 card MUST be Ace or Joker.
+ * 2. Player has 13 cards (12 melded cards with Dasar 4/5 + 1 closing card Ace or Joker), OR
+ * 3. Player has 14 cards (after drawing, 13 melded cards with Dasar 4/5 + 1 closing card Ace or Joker).
  */
 export function checkCanTutup(
   hand: Card[],
@@ -608,7 +640,8 @@ export function checkCanTutup(
     };
   }
 
-  if (hand.length !== 14) {
+  // Support closing with either 13 cards (12 melded + 1 close card) or 14 cards (13 melded + 1 close card)
+  if (hand.length !== 13 && hand.length !== 14) {
     return { canClose: false, closingCardCandidates: [] };
   }
 
@@ -621,15 +654,20 @@ export function checkCanTutup(
     return { canClose: false, closingCardCandidates: [] };
   }
 
-  // Check for each candidate Ace or Joker: if we discard it, can the other 13 cards all be melded?
-  for (const closeCard of potentialCloseCards) {
-    const remaining13 = hand.filter((c) => c.id !== closeCard.id);
-    const eval13 = evaluateBestMelds(remaining13, customDasar4CardIds);
+  const targetMeldedCount = hand.length - 1; // 12 cards if hand is 13, 13 cards if hand is 14
 
-    // To win completely, must have Dasar 4 and 0 deadwood (or all 13 cards in valid melds)
-    if (eval13.hasDasar4 && eval13.deadwood.length === 0) {
-      closingCandidates.push(closeCard);
-      bestMeldSetup = eval13.melds;
+  // Check for each candidate Ace or Joker: if we separate it as closing card, can all other cards be melded without deadwood?
+  for (const closeCard of potentialCloseCards) {
+    const remainingCards = hand.filter((c) => c.id !== closeCard.id);
+    const evalRem = evaluateBestMelds(remainingCards, customDasar4CardIds);
+
+    // To win completely, must have Dasar (length >= 4) and 0 deadwood (all remaining cards melded)
+    if (evalRem.hasDasar4 && evalRem.deadwood.length === 0) {
+      const meldedCount = evalRem.melds.reduce((sum, m) => sum + m.cards.length, 0);
+      if (meldedCount === targetMeldedCount) {
+        closingCandidates.push(closeCard);
+        bestMeldSetup = evalRem.melds;
+      }
     }
   }
 
@@ -637,6 +675,117 @@ export function checkCanTutup(
     canClose: closingCandidates.length > 0,
     closingCardCandidates: closingCandidates,
     meldSetup: bestMeldSetup,
+  };
+}
+
+export interface HandTutupStatus {
+  canClose: boolean;
+  hasDasar4: boolean;
+  deadwoodCount: number;
+  deadwoodPoints: number;
+  meldPoints: number;
+  totalPoints: number;
+  is13AllPlus: boolean;
+  closingCardCandidates: Card[];
+  statusText: string;
+  detailText: string;
+}
+
+/**
+ * Evaluates hand status regarding closing conditions:
+ * - Dasar 4/5 is mandatory (minimal 4 urutan sejenis murni)
+ * - All other cards must be formed into valid melds (Dasar, Run 3+, Tris, Fourhand) -> deadwood = 0
+ * - Closing card must be Ace or Joker
+ */
+export function evaluateHandTutupStatus(
+  hand: Card[],
+  customDasar4CardIds?: string[]
+): HandTutupStatus {
+  if (check4Jokers(hand)) {
+    const jokers = hand.filter((c) => c.rank === 'JOKER' || c.suit === 'joker');
+    return {
+      canClose: true,
+      hasDasar4: true,
+      deadwoodCount: 0,
+      deadwoodPoints: 0,
+      meldPoints: 1000,
+      totalPoints: 1000,
+      is13AllPlus: true,
+      closingCardCandidates: jokers,
+      statusText: '🌟 4 JOKER JACKPOT (1000 POIN)',
+      detailText: 'Memiliki 4 Joker! Langsung berhak klaim 1000 poin kemenangan.',
+    };
+  }
+
+  const evalAll = evaluateBestMelds(hand, customDasar4CardIds);
+  const scoreBreakdown = calculatePlayerScore(hand, customDasar4CardIds);
+  const tutupCheck = checkCanTutup(hand, customDasar4CardIds);
+
+  const deadwoodCount = evalAll.deadwood.length;
+  const deadwoodPoints = scoreBreakdown.deadwoodPoints;
+  const meldPoints = scoreBreakdown.meldPoints;
+
+  // Jika kartu siap tutup (baik 13 kartu maupun 14 kartu)
+  if (tutupCheck.canClose) {
+    const candidateRanks = Array.from(new Set(tutupCheck.closingCardCandidates.map((c) => c.rank))).join(', ');
+    return {
+      canClose: true,
+      hasDasar4: true,
+      deadwoodCount: 0,
+      deadwoodPoints: 0,
+      meldPoints,
+      totalPoints: scoreBreakdown.totalPoints,
+      is13AllPlus: true,
+      closingCardCandidates: tutupCheck.closingCardCandidates,
+      statusText: `✓ Siap Tutup Permainan dengan Penutup (${candidateRanks})!`,
+      detailText: `Semua kombinasi masuk pola sah (Dasar 4/5, Urutan 3, Tris, Fourhand) tanpa sisa. Kartu penutup: ${candidateRanks}.`,
+    };
+  }
+
+  // Jika kartu 13 dan semua 13 kartu sudah membentuk pola tanpa sisa
+  if (hand.length === 13 && evalAll.hasDasar4 && deadwoodCount === 0) {
+    return {
+      canClose: false,
+      hasDasar4: true,
+      deadwoodCount: 0,
+      deadwoodPoints: 0,
+      meldPoints,
+      totalPoints: scoreBreakdown.totalPoints,
+      is13AllPlus: true,
+      closingCardCandidates: [],
+      statusText: '✓ 13 Kartu Bernilai Plus Sempurna (Kurang 1 Penutup)',
+      detailText: '13 kartu sudah masuk pola (0 sisa). Butuh ambil 1 kartu penutup (Ace atau Joker) untuk menang.',
+    };
+  }
+
+  // Jika punya Dasar 4 tapi masih ada sisa kartu bernilai minus
+  if (evalAll.hasDasar4) {
+    return {
+      canClose: false,
+      hasDasar4: true,
+      deadwoodCount,
+      deadwoodPoints,
+      meldPoints,
+      totalPoints: scoreBreakdown.totalPoints,
+      is13AllPlus: false,
+      closingCardCandidates: [],
+      statusText: `✓ Memiliki Dasar 4 (Plus: +${meldPoints}p, Sisa: -${deadwoodPoints}p)`,
+      detailText: `⚠️ Belum bisa tutup! Masih ada ${deadwoodCount} kartu sisa (-${deadwoodPoints}p). Syarat tutup: semua kartu masuk pola (0 sisa) & penutup Ace/Joker.`,
+    };
+  }
+
+  // Jika belum ada Dasar 4
+  return {
+    canClose: false,
+    hasDasar4: false,
+    deadwoodCount: hand.length,
+    deadwoodPoints: scoreBreakdown.deadwoodPoints,
+    meldPoints: 0,
+    totalPoints: scoreBreakdown.totalPoints,
+    is13AllPlus: false,
+    closingCardCandidates: [],
+    statusText: `✗ Belum Memiliki Dasar 4 (Semua Kartu Minus: -${scoreBreakdown.deadwoodPoints}p)`,
+    detailText: 'Wajib mengumpulkan Dasar 4 (minimal 4 kartu sejenis berurutan murni tanpa Joker) agar kartu bernilai plus.',
   };
 }
 
@@ -919,3 +1068,164 @@ export function getBotAction(
     canClose: false,
   };
 }
+
+/**
+ * Aturan Tombol Tahan:
+ * Tombol Tahan HANYA DAPAT DIGUNAKAN jika:
+ * 1. Kurang Dasar 4 (memiliki 3 kartu berurutan sejenis yang butuh 1 kartu lagi untuk menjadi Dasar 4), ATAU
+ * 2. Kurang 1 pola lagi (sudah memiliki Dasar 4 dan sisa kartu hanya butuh 1 pola/kartu lagi menuju tutup, atau kartu siap tutup).
+ * Selain kondisi tersebut, tombol tahan TIDAK DAPAT digunakan.
+ */
+export function checkTahanEligibility(
+  hand: Card[],
+  customDasar4CardIds?: string[]
+): TahanCheckResult {
+  if (!hand || hand.length === 0) {
+    return {
+      canTahan: false,
+      description: 'Kartu tangan kosong.',
+    };
+  }
+
+  // 1. Jika sudah siap tutup (semua pola lengkap + kartu penutup) atau jackpot 4 joker
+  const tutupCheck = checkCanTutup(hand, customDasar4CardIds);
+  if (tutupCheck.canClose || check4Jokers(hand)) {
+    return {
+      canTahan: true,
+      reason: 'kurang_1_pola',
+      description: 'Kartu siap tutup! Wajib aktifkan Tahan sebelum menutup.',
+    };
+  }
+
+  // 2. Periksa apakah sudah memiliki Dasar 4
+  const evalResult = evaluateBestMelds(hand, customDasar4CardIds);
+  if (evalResult.hasDasar4) {
+    const deadwood = evalResult.deadwood;
+
+    // Jika deadwood tinggal 0 atau 1 kartu, jelas kurang 1 kartu penutup / langkah tutup
+    if (deadwood.length <= 1) {
+      return {
+        canTahan: true,
+        reason: 'kurang_1_pola',
+        description: 'Kurang 1 pola lagi (Dasar 4 terpenuhi, tinggal 1 kartu penutup).',
+      };
+    }
+
+    // Jika deadwood memiliki 2 atau 3 kartu, periksa apakah ada pasangan (Tris potensial) atau 2 kartu berurutan (Run potensial)
+    const deadwoodNaturals = deadwood.filter((c) => c.rank !== 'JOKER' && c.suit !== 'joker');
+    const hasJokerInDeadwood = deadwood.some((c) => c.rank === 'JOKER' || c.suit === 'joker');
+
+    if (hasJokerInDeadwood) {
+      return {
+        canTahan: true,
+        reason: 'kurang_1_pola',
+        description: 'Kurang 1 pola lagi (memiliki Joker cadangan untuk melengkapi pola).',
+      };
+    }
+
+    // Cek pasangan angka sama (calon Tris)
+    const rankCounts = new Map<Rank, number>();
+    for (const c of deadwoodNaturals) {
+      rankCounts.set(c.rank, (rankCounts.get(c.rank) || 0) + 1);
+      if ((rankCounts.get(c.rank) || 0) >= 2) {
+        return {
+          canTahan: true,
+          reason: 'kurang_1_pola',
+          description: `Kurang 1 pola lagi (Dasar 4 terpenuhi, punya pasangan ${c.rank} butuh 1 untuk Tris).`,
+        };
+      }
+    }
+
+    // Cek 2 kartu berurutan / celah 1 sejenis (calon Run)
+    for (const suit of SUITS) {
+      const sc = deadwoodNaturals.filter((c) => c.suit === suit);
+      if (sc.length >= 2) {
+        for (const aceHigh of [false, true]) {
+          const sorted = [...sc].sort((a, b) => rankToNumber(a.rank, aceHigh) - rankToNumber(b.rank, aceHigh));
+          for (let i = 0; i < sorted.length - 1; i++) {
+            const diff = rankToNumber(sorted[i + 1].rank, aceHigh) - rankToNumber(sorted[i].rank, aceHigh);
+            if (diff === 1 || diff === 2) {
+              return {
+                canTahan: true,
+                reason: 'kurang_1_pola',
+                description: `Kurang 1 pola lagi (Dasar 4 terpenuhi, punya urutan ${getSuitSymbol(suit)} butuh 1 kartu untuk Run).`,
+              };
+            }
+          }
+        }
+      }
+    }
+
+    // Jika Dasar 4 terpenuhi dan sisa kartu deadwood <= 2 (misal tinggal buang 1)
+    if (deadwood.length <= 2) {
+      return {
+        canTahan: true,
+        reason: 'kurang_1_pola',
+        description: 'Kurang 1 pola lagi (hanya tersisa sedikit kartu lepas).',
+      };
+    }
+  }
+
+  // 3. Jika belum memiliki Dasar 4, periksa Kondisi: "Kurang Dasar 4"
+  // Mencari 3 kartu sejenis tanpa Joker yang hanya butuh 1 kartu lagi untuk menjadi Dasar 4 (4 kartu urut murni)
+  const naturals = hand.filter((c) => c.rank !== 'JOKER' && c.suit !== 'joker');
+  for (const suit of SUITS) {
+    const suitCards = naturals.filter((c) => c.suit === suit);
+    if (suitCards.length < 3) continue;
+
+    const rankMap = new Map<Rank, Card>();
+    for (const c of suitCards) {
+      if (!rankMap.has(c.rank)) rankMap.set(c.rank, c);
+    }
+    const distinctRanks = Array.from(rankMap.keys());
+    if (distinctRanks.length < 3) continue;
+
+    for (const aceHigh of [false, true]) {
+      const nums = distinctRanks
+        .map((r) => rankToNumber(r, aceHigh))
+        .sort((a, b) => a - b);
+
+      // Cari kombinasi 3 kartu
+      for (let i = 0; i < nums.length - 2; i++) {
+        for (let j = i + 1; j < nums.length - 1; j++) {
+          for (let k = j + 1; k < nums.length; k++) {
+            const n1 = nums[i];
+            const n2 = nums[j];
+            const n3 = nums[k];
+            const span = n3 - n1 + 1;
+
+            // 3 kartu berurutan langsung: n1, n1+1, n1+2 (span 3)
+            // Bisa diperpanjang dengan kartu ke-4 di n1-1 atau n3+1
+            if (n2 === n1 + 1 && n3 === n2 + 1) {
+              const minBound = aceHigh ? 10 : 1;
+              const maxBound = aceHigh ? 14 : 13;
+              if (n1 > minBound || n3 < maxBound) {
+                return {
+                  canTahan: true,
+                  reason: 'kurang_dasar_4',
+                  description: `Kurang Dasar 4 (memiliki 3 kartu urut ${getSuitSymbol(suit)}, butuh 1 kartu lagi).`,
+                };
+              }
+            }
+
+            // 3 kartu dengan 1 celah dalam rentang 4 kartu: misal [5,6,8] atau [5,7,8] (span 4)
+            if (span === 4) {
+              return {
+                canTahan: true,
+                reason: 'kurang_dasar_4',
+                description: `Kurang Dasar 4 (rentang 4 kartu ${getSuitSymbol(suit)} butuh 1 kartu pengisi).`,
+              };
+            }
+          }
+        }
+      }
+    }
+  }
+
+  // 4. Selain itu, tombol tahan TIDAK DAPAT digunakan
+  return {
+    canTahan: false,
+    description: 'Tombol Tahan tidak dapat digunakan. Hanya aktif jika kurang Dasar 4 atau kurang 1 pola lagi.',
+  };
+}
+

@@ -18,12 +18,17 @@ import {
   Copy,
   LogOut,
   History,
+  BarChart3,
+  MessageSquare,
 } from 'lucide-react';
-import { GameState, Card, Meld, JokerSuggestion } from '../game/types';
+import { GameState, Card, Meld, JokerSuggestion, ChatMessage } from '../game/types';
 import { CardView } from './CardView';
 import { PlayerSeat } from './PlayerSeat';
 import { JokerSuggestionsModal } from './JokerSuggestionsModal';
 import { DiscardHistoryModal } from './DiscardHistoryModal';
+import { LeaderboardBarChart } from './LeaderboardBarChart';
+import { LeaderboardScoreTable } from './LeaderboardScoreTable';
+import { ChatBox } from './ChatBox';
 import {
   evaluateBestMelds,
   checkCanTutup,
@@ -32,6 +37,8 @@ import {
   getClosingBonus,
   findJokerSuggestions,
   check4Jokers,
+  checkTahanEligibility,
+  evaluateHandTutupStatus,
 } from '../game/remiRules';
 
 interface GameTableProps {
@@ -59,6 +66,8 @@ interface GameTableProps {
   lastActionText?: string;
   onClaim4Jokers?: () => void;
   onUpdateHand?: (cards: Card[]) => void;
+  onSendMessage?: (text: string) => void;
+  chatMessages?: ChatMessage[];
 }
 
 export const GameTable: React.FC<GameTableProps> = ({
@@ -86,6 +95,8 @@ export const GameTable: React.FC<GameTableProps> = ({
   lastActionText,
   onClaim4Jokers,
   onUpdateHand,
+  onSendMessage,
+  chatMessages = [],
 }) => {
   const {
     players,
@@ -103,6 +114,10 @@ export const GameTable: React.FC<GameTableProps> = ({
   const [copiedToast, setCopiedToast] = useState(false);
   const [showJokerModal, setShowJokerModal] = useState(false);
   const [showDiscardHistory, setShowDiscardHistory] = useState(false);
+  const [showLeftBarModal, setShowLeftBarModal] = useState(false);
+  const [showRightScoreModal, setShowRightScoreModal] = useState(false);
+  const [showChatModal, setShowChatModal] = useState(false);
+  const [tahanWarningToast, setTahanWarningToast] = useState<string | null>(null);
 
   const localPlayerId = gameState.localPlayerId || 'p_0';
   const localPlayerIndex = players.findIndex((p) => p.id === localPlayerId);
@@ -116,6 +131,11 @@ export const GameTable: React.FC<GameTableProps> = ({
   const evalResult = evaluateBestMelds(humanPlayer.hand, customDasar4CardIds);
   const scoreBreakdown = calculatePlayerScore(humanPlayer.hand, customDasar4CardIds);
   const tutupCheck = checkCanTutup(humanPlayer.hand, customDasar4CardIds);
+  const handTutupStatus = evaluateHandTutupStatus(humanPlayer.hand, customDasar4CardIds);
+
+  // Aturan Tahan: Hanya dapat digunakan jika kurang Dasar 4 atau kurang 1 pola lagi!
+  const tahanEligibility = checkTahanEligibility(humanPlayer.hand, customDasar4CardIds);
+  const canToggleTahan = tahanEligibility.canTahan;
 
   // 4 Jokers & Joker Pattern suggestions
   const has4Jokers = check4Jokers(humanPlayer.hand);
@@ -183,7 +203,7 @@ export const GameTable: React.FC<GameTableProps> = ({
     }
   };
 
-  // Calculate seat position along circular table perimeter
+  // Calculate seat position along oval (lingkaran lonjong) table perimeter
   const getRoundSeatPosition = (idx: number, total: number, localIdx: number) => {
     const rel = (idx - localIdx + total) % total;
     // rel = 0 is local player at bottom (90 deg)
@@ -191,9 +211,9 @@ export const GameTable: React.FC<GameTableProps> = ({
     const angleDeg = (90 - rel * (360 / total) + 360) % 360;
     const angleRad = (angleDeg * Math.PI) / 180;
 
-    // Radius from center of table:
-    const radiusX = 40; // percent
-    const radiusY = 38; // percent
+    // Radius along oval axes (x is wider for oval feel):
+    const radiusX = 43; // percent
+    const radiusY = 37; // percent
 
     const left = 50 + radiusX * Math.cos(angleRad);
     const top = 50 + radiusY * Math.sin(angleRad);
@@ -253,7 +273,7 @@ export const GameTable: React.FC<GameTableProps> = ({
           )}
 
           <div className="hidden md:flex items-center gap-1.5 text-xs text-slate-300">
-            <span className="text-slate-400">Meja Bulat:</span>
+            <span className="text-slate-400">Meja Lonjong:</span>
             <span className="font-bold text-amber-300">
               {occupiedCount}/{players.length} Kursi
             </span>
@@ -283,6 +303,47 @@ export const GameTable: React.FC<GameTableProps> = ({
 
         {/* Quick Utilities */}
         <div className="flex items-center gap-1.5 shrink-0">
+          {/* Leaderboard Grafik Batang Button (for quick access or compact screens) */}
+          <button
+            type="button"
+            onClick={() => setShowLeftBarModal(true)}
+            aria-label="Buka Grafik Batang Poin"
+            title="Lihat grafik batang peringkat poin menuju 1000"
+            className="flex items-center gap-1 px-2 py-1 rounded-lg bg-emerald-950/80 hover:bg-emerald-900 border border-emerald-700/60 text-[11px] font-semibold text-amber-300 cursor-pointer transition-colors shadow-xs"
+          >
+            <BarChart3 className="w-3.5 h-3.5 text-amber-400" />
+            <span className="hidden sm:inline">Grafik</span>
+          </button>
+
+          {/* Leaderboard Tabel Skor Button */}
+          <button
+            type="button"
+            onClick={() => setShowRightScoreModal(true)}
+            aria-label="Buka Tabel Skor Peringkat"
+            title="Lihat tabel skor peringkat poin"
+            className="flex items-center gap-1 px-2 py-1 rounded-lg bg-emerald-950/80 hover:bg-emerald-900 border border-emerald-700/60 text-[11px] font-semibold text-emerald-300 cursor-pointer transition-colors shadow-xs"
+          >
+            <Trophy className="w-3.5 h-3.5 text-emerald-400" />
+            <span className="hidden sm:inline">Skor</span>
+          </button>
+
+          {/* Real-time Chat Box Button */}
+          <button
+            type="button"
+            onClick={() => setShowChatModal(true)}
+            aria-label="Buka Kotak Obrolan Meja"
+            title="Buka obrolan pesan antar-pemain"
+            className="flex items-center gap-1 px-2 py-1 rounded-lg bg-emerald-950/80 hover:bg-emerald-900 border border-emerald-700/60 text-[11px] font-semibold text-emerald-300 cursor-pointer transition-colors shadow-xs relative"
+          >
+            <MessageSquare className="w-3.5 h-3.5 text-emerald-400" />
+            <span className="hidden sm:inline">Chat</span>
+            {chatMessages.length > 0 && (
+              <span className="text-[10px] bg-emerald-700 text-white px-1.5 py-0.2 rounded-full font-bold border border-emerald-500 tabular-nums">
+                {chatMessages.length}
+              </span>
+            )}
+          </button>
+
           {/* Discard History Button */}
           <button
             type="button"
@@ -340,8 +401,19 @@ export const GameTable: React.FC<GameTableProps> = ({
         </div>
       </header>
 
-      {/* Main Round Table Arena ("Meja Bulat") */}
-      <main className="relative flex-1 w-full max-w-6xl mx-auto px-2 py-1 flex flex-col justify-between items-center z-10 overflow-hidden">
+      {/* 3-Column Arena Layout: Left (Bar Chart) | Center (Arena) | Right (Score Table & Chat) */}
+      <div className="relative flex-1 w-full flex items-stretch overflow-hidden px-1 sm:px-2 py-1 gap-2">
+        {/* KOLOM SEBELAH KIRI: Leaderboard Grafik Batang */}
+        <div className="hidden lg:flex w-56 xl:w-64 shrink-0 flex-col h-full overflow-hidden">
+          <LeaderboardBarChart
+            players={players}
+            activePlayerIndex={activePlayerIndex}
+            localPlayerId={localPlayerId}
+          />
+        </div>
+
+        {/* KOLOM TENGAH: Main Round Table Arena ("Meja Bulat") */}
+        <main className="relative flex-1 max-w-5xl mx-auto px-1 sm:px-2 py-1 flex flex-col justify-between items-center z-10 overflow-hidden h-full">
         {/* Toast Copied Room Code */}
         {copiedToast && (
           <div className="absolute top-2 z-40 bg-emerald-600 text-white font-bold text-xs px-3 py-1.5 rounded-full shadow-lg shadow-black/60 flex items-center gap-1.5 animate-bounce">
@@ -350,21 +422,21 @@ export const GameTable: React.FC<GameTableProps> = ({
           </div>
         )}
 
-        {/* The Circular Felt Table */}
-        <div className="relative w-full max-w-[min(94vw,560px)] sm:max-w-[min(90vw,600px)] aspect-square my-auto flex items-center justify-center p-2">
-          {/* Wood/Leather Outer Bezel */}
-          <div className="w-full h-full rounded-full bg-gradient-to-b from-[#3a1e0f] via-[#24130a] to-[#120804] p-3 sm:p-4 shadow-[0_20px_60px_rgba(0,0,0,0.9),inset_0_2px_4px_rgba(255,255,255,0.15)] border-2 sm:border-4 border-[#4a2815] relative flex items-center justify-center">
-            {/* Golden Inlay Ring */}
-            <div className="w-full h-full rounded-full border-2 border-amber-500/30 p-2 sm:p-3 shadow-inner flex items-center justify-center">
-              {/* Deep Emerald Green Felt Table Surface */}
-              <div className="w-full h-full rounded-full bg-[radial-gradient(circle_at_center,#0e5333_0%,#083321_60%,#03180f_100%)] relative flex items-center justify-center shadow-[inset_0_0_50px_rgba(0,0,0,0.85)]">
+        {/* The Oval (Lingkaran Lonjong) Felt Table */}
+        <div className="relative w-full max-w-[min(96vw,860px)] aspect-[1.85/1] sm:aspect-[2.1/1] max-h-[440px] my-auto flex items-center justify-center p-1 sm:p-2">
+          {/* Wood/Leather Outer Bezel - Oval / Lingkaran Lonjong Kasino Mewah */}
+          <div className="w-full h-full rounded-full bg-gradient-to-b from-[#3a1e0f] via-[#24130a] to-[#120804] p-2.5 sm:p-4 shadow-[0_20px_60px_rgba(0,0,0,0.9),inset_0_2px_4px_rgba(255,255,255,0.15)] border-3 sm:border-5 border-[#4a2815] relative flex items-center justify-center">
+            {/* Golden Inlay Ring Oval */}
+            <div className="w-full h-full rounded-full border-2 border-amber-500/35 p-1.5 sm:p-2.5 shadow-inner flex items-center justify-center">
+              {/* Deep Emerald Green Felt Table Surface Oval */}
+              <div className="w-full h-full rounded-full bg-[radial-gradient(ellipse_at_center,#0e5333_0%,#083321_60%,#03180f_100%)] relative flex items-center justify-center shadow-[inset_0_0_60px_rgba(0,0,0,0.85)]">
                 {/* Radial watermarked suits */}
                 <div className="absolute inset-0 flex items-center justify-center opacity-5 pointer-events-none select-none text-9xl font-serif">
                   ♠
                 </div>
 
-                {/* Circular Discard Direction Ring */}
-                <div className="absolute w-[74%] h-[74%] rounded-full border border-dashed border-emerald-500/25 pointer-events-none" />
+                {/* Oval Discard Direction Ring */}
+                <div className="absolute w-[82%] h-[74%] rounded-full border border-dashed border-emerald-500/25 pointer-events-none" />
 
                 {/* All Player Seats Positioned Along the Circular Perimeter */}
                 {players.map((p, idx) => {
@@ -591,82 +663,121 @@ export const GameTable: React.FC<GameTableProps> = ({
           </div>
 
           {/* Hand Info & Status Bar */}
-          <div className="w-full max-w-4xl flex flex-wrap items-center justify-between gap-2 px-3 py-1.5 bg-slate-950 border-x border-slate-700/80">
-            {/* Dasar 4 & Poin Status */}
-            <div className="flex items-center gap-2">
-              {evalResult.hasDasar4 ? (
-                <span className="flex items-center gap-1 text-xs font-bold text-emerald-400 bg-emerald-950/80 px-2.5 py-0.5 rounded-full border border-emerald-500/50">
-                  <CheckCircle2 className="w-3.5 h-3.5 text-emerald-400" />
-                  <span>Dasar 4: TERPENUHI ✓</span>
-                </span>
-              ) : (
-                <span className="flex items-center gap-1 text-xs font-bold text-amber-400 bg-amber-950/80 px-2.5 py-0.5 rounded-full border border-amber-500/50">
-                  <AlertTriangle className="w-3.5 h-3.5 text-amber-400" />
-                  <span>Dasar 4: BELUM ADA ✗</span>
-                </span>
-              )}
+          <div className="w-full max-w-5xl flex flex-col gap-1 px-3 py-1.5 bg-slate-950 border-x border-slate-700/80">
+            <div className="flex flex-wrap items-center justify-between gap-2">
+              {/* Dasar 4 & Poin Status */}
+              <div className="flex flex-wrap items-center gap-2">
+                {evalResult.hasDasar4 ? (
+                  <span className="flex items-center gap-1 text-xs font-bold text-emerald-400 bg-emerald-950/80 px-2.5 py-0.5 rounded-full border border-emerald-500/50">
+                    <CheckCircle2 className="w-3.5 h-3.5 text-emerald-400" />
+                    <span>Dasar 4: TERPENUHI ✓</span>
+                  </span>
+                ) : (
+                  <span className="flex items-center gap-1 text-xs font-bold text-amber-400 bg-amber-950/80 px-2.5 py-0.5 rounded-full border border-amber-500/50">
+                    <AlertTriangle className="w-3.5 h-3.5 text-amber-400" />
+                    <span>Dasar 4: BELUM ADA ✗</span>
+                  </span>
+                )}
 
-              {/* Tahan Status Pill */}
-              {humanPlayer.isTahan && (
-                <span className="flex items-center gap-1 text-xs font-black text-red-100 bg-red-700 px-2.5 py-0.5 rounded-full border border-red-400 animate-pulse">
-                  <ShieldAlert className="w-3.5 h-3.5 text-red-200" />
-                  <span>TAHAN AKTIF ⚠️</span>
-                </span>
-              )}
+                {/* Status 13 Kartu Wajib Plus & Penutup */}
+                {handTutupStatus.canClose ? (
+                  <span className="flex items-center gap-1 text-xs font-black text-amber-300 bg-amber-950/90 px-2.5 py-0.5 rounded-full border border-amber-400 animate-pulse shadow-md shadow-amber-900/40">
+                    <Sparkles className="w-3.5 h-3.5 text-amber-400" />
+                    <span>13 KARTU PLUS SEMPURNA + PENUTUP SIAP!</span>
+                  </span>
+                ) : evalResult.hasDasar4 ? (
+                  evalResult.deadwood.length === 0 ? (
+                    <span className="flex items-center gap-1 text-xs font-bold text-emerald-300 bg-emerald-950/90 px-2.5 py-0.5 rounded-full border border-emerald-500/60">
+                      <CheckCircle2 className="w-3.5 h-3.5 text-emerald-400" />
+                      <span>13 Kartu Semua Nilai Plus (Tinggal Ambil Penutup Ace/Joker)</span>
+                    </span>
+                  ) : (
+                    <span className="flex items-center gap-1 text-xs font-semibold text-amber-300 bg-amber-950/70 px-2.5 py-0.5 rounded-full border border-amber-600/50">
+                      <span>Kombinasi Plus: +{scoreBreakdown.meldPoints}p</span>
+                      <span className="text-amber-500">•</span>
+                      <span className="text-rose-400 font-bold">Sisa: -{scoreBreakdown.deadwoodPoints}p ({evalResult.deadwood.length} kartu)</span>
+                    </span>
+                  )
+                ) : null}
 
-              {/* Point preview */}
-              <div className="text-[11px] font-semibold text-slate-300">
-                Poin Anda:{' '}
-                <span
-                  className={`font-bold tabular-nums ${
-                    scoreBreakdown.totalPoints >= 0 ? 'text-emerald-300' : 'text-red-400'
-                  }`}
+                {/* Tahan Status Pill */}
+                {humanPlayer.isTahan && (
+                  <span className="flex items-center gap-1 text-xs font-black text-red-100 bg-red-700 px-2.5 py-0.5 rounded-full border border-red-400 animate-pulse">
+                    <ShieldAlert className="w-3.5 h-3.5 text-red-200" />
+                    <span>TAHAN AKTIF ⚠️</span>
+                  </span>
+                )}
+
+                {/* Point preview */}
+                <div className="text-[11px] font-semibold text-slate-300">
+                  Total:{' '}
+                  <span
+                    className={`font-bold tabular-nums ${
+                      scoreBreakdown.totalPoints >= 0 ? 'text-emerald-300' : 'text-red-400'
+                    }`}
+                  >
+                    {scoreBreakdown.totalPoints >= 0
+                      ? `+${scoreBreakdown.totalPoints}`
+                      : scoreBreakdown.totalPoints}
+                  </span>
+                </div>
+              </div>
+
+              {/* Hand Organization Helpers */}
+              <div className="flex items-center gap-1.5">
+                {localHasJoker && (
+                  <button
+                    type="button"
+                    onClick={() => setShowJokerModal(true)}
+                    className="flex items-center gap-1 px-2.5 py-0.5 rounded text-[11px] font-black bg-purple-950/90 hover:bg-purple-900 text-purple-200 border border-purple-500/70 cursor-pointer shadow-md shadow-purple-950/50 animate-pulse"
+                    title="Pilihan pola yang dapat dibentuk oleh kartu Joker"
+                  >
+                    <span className="text-xs">🃏</span>
+                    <span>Pola Joker ({jokerSuggestions.length})</span>
+                  </button>
+                )}
+                <button
+                  type="button"
+                  onClick={onSortBySuit}
+                  className="px-2 py-0.5 rounded text-[11px] font-medium bg-slate-800 hover:bg-slate-700 text-slate-200 border border-slate-700 cursor-pointer"
                 >
-                  {scoreBreakdown.totalPoints >= 0
-                    ? `+${scoreBreakdown.totalPoints}`
-                    : scoreBreakdown.totalPoints}
-                </span>{' '}
-                <span className="text-[10px] text-slate-400">
-                  ({evalResult.hasDasar4 ? `+${scoreBreakdown.meldPoints} / -${scoreBreakdown.deadwoodPoints}` : 'minus semua tanpa Dasar 4'})
-                </span>
+                  Urut Bunga
+                </button>
+                <button
+                  type="button"
+                  onClick={onSortByRank}
+                  className="px-2 py-0.5 rounded text-[11px] font-medium bg-slate-800 hover:bg-slate-700 text-slate-200 border border-slate-700 cursor-pointer"
+                >
+                  Urut Angka
+                </button>
+                <button
+                  type="button"
+                  onClick={onGroupByMelds}
+                  className="flex items-center gap-1 px-2.5 py-0.5 rounded text-[11px] font-bold bg-emerald-900/60 hover:bg-emerald-800/80 text-emerald-200 border border-emerald-600/50 cursor-pointer"
+                >
+                  <Sparkles className="w-3 h-3 text-amber-300" />
+                  <span>Susun Pola</span>
+                </button>
               </div>
             </div>
 
-            {/* Hand Organization Helpers */}
-            <div className="flex items-center gap-1.5">
-              {localHasJoker && (
-                <button
-                  type="button"
-                  onClick={() => setShowJokerModal(true)}
-                  className="flex items-center gap-1 px-2.5 py-0.5 rounded text-[11px] font-black bg-purple-950/90 hover:bg-purple-900 text-purple-200 border border-purple-500/70 cursor-pointer shadow-md shadow-purple-950/50 animate-pulse"
-                  title="Pilihan pola yang dapat dibentuk oleh kartu Joker"
-                >
-                  <span className="text-xs">🃏</span>
-                  <span>Pola Joker ({jokerSuggestions.length})</span>
-                </button>
-              )}
-              <button
-                type="button"
-                onClick={onSortBySuit}
-                className="px-2 py-0.5 rounded text-[11px] font-medium bg-slate-800 hover:bg-slate-700 text-slate-200 border border-slate-700 cursor-pointer"
-              >
-                Urut Bunga
-              </button>
-              <button
-                type="button"
-                onClick={onSortByRank}
-                className="px-2 py-0.5 rounded text-[11px] font-medium bg-slate-800 hover:bg-slate-700 text-slate-200 border border-slate-700 cursor-pointer"
-              >
-                Urut Angka
-              </button>
-              <button
-                type="button"
-                onClick={onGroupByMelds}
-                className="flex items-center gap-1 px-2.5 py-0.5 rounded text-[11px] font-bold bg-emerald-900/60 hover:bg-emerald-800/80 text-emerald-200 border border-emerald-600/50 cursor-pointer"
-              >
-                <Sparkles className="w-3 h-3 text-amber-300" />
-                <span>Susun Pola</span>
-              </button>
+            {/* Sub-keterangan Aturan Penutupan (Edukatif & Ramah Pemain) */}
+            <div className="text-[10px] sm:text-[11px] text-slate-400 flex items-center justify-between border-t border-slate-800/80 pt-0.5 px-0.5">
+              <span className="truncate">
+                {evalResult.hasDasar4 && evalResult.deadwood.length > 0 ? (
+                  <span className="text-amber-300/90">
+                    💡 <strong>Aturan Tutup:</strong> Semua 13 kartu wajib masuk pola sah (Dasar 4, Urutan 3, Tris, atau Fourhand) tanpa sisa (0 deadwood), kartu ke-14 adalah Ace atau Joker.
+                  </span>
+                ) : handTutupStatus.canClose ? (
+                  <span className="text-emerald-300 font-medium">
+                    🎉 <strong>Siap Tutup:</strong> Tekan Tahan lalu klik Tutup dengan kartu {tutupCheck.closingCardCandidates.map(c => c.rank).join(' atau ')}!
+                  </span>
+                ) : (
+                  <span>
+                    Pola Sah: <strong>Dasar 4</strong> (min 4 urut tanpa joker), <strong>Urutan 3</strong>, <strong>Tris</strong> (3 kartu beda bunga), <strong>Fourhand</strong> (4 kartu beda bunga). Penutup: <strong>Ace</strong> (+150) / <strong>Joker</strong> (+250).
+                  </span>
+                )}
+              </span>
             </div>
           </div>
 
@@ -674,30 +785,41 @@ export const GameTable: React.FC<GameTableProps> = ({
           <div className="w-full max-w-5xl bg-slate-950/95 border border-slate-800 rounded-b-2xl p-2.5 sm:p-3 shadow-2xl flex flex-col items-center">
             {/* The Cards (Draggable!) */}
             <div className="w-full flex items-center justify-center -space-x-4 sm:-space-x-6 overflow-x-auto py-2 px-4 scrollbar-thin">
-              {humanPlayer.hand.map((card, idx) => {
-                const isSelected = card.id === selectedCardId;
-                const dasar4Cards = evalResult.melds.find((m) => m.type === 'dasar4')?.cards || [];
-                const inDasar = dasar4Cards.some((dc) => dc.id === card.id);
+              {(() => {
+                const meldMap = new Map<string, import('../game/types').MeldType>();
+                evalResult.melds.forEach((m) => {
+                  m.cards.forEach((c) => {
+                    meldMap.set(c.id, m.type);
+                  });
+                });
 
-                return (
-                  <div
-                    key={card.id}
-                    className="transform origin-bottom transition-all"
-                    style={{ zIndex: isSelected ? 30 : idx + 1 }}
-                    onDragOver={(e) => e.preventDefault()}
-                    onDrop={(e) => handleDropOnCard(e, card.id)}
-                  >
-                    <CardView
-                      card={card}
-                      isSelected={isSelected}
-                      inDasar4={inDasar}
-                      draggable={true}
-                      onDragStart={(e) => handleDragStart(e, card.id)}
-                      onClick={() => onSelectCard(card.id)}
-                    />
-                  </div>
-                );
-              })}
+                return humanPlayer.hand.map((card, idx) => {
+                  const isSelected = card.id === selectedCardId;
+                  const meldType = meldMap.get(card.id) || null;
+                  const isClosingCandidate = tutupCheck.closingCardCandidates.some((c) => c.id === card.id);
+
+                  return (
+                    <div
+                      key={card.id}
+                      className="transform origin-bottom transition-all"
+                      style={{ zIndex: isSelected ? 30 : idx + 1 }}
+                      onDragOver={(e) => e.preventDefault()}
+                      onDrop={(e) => handleDropOnCard(e, card.id)}
+                    >
+                      <CardView
+                        card={card}
+                        isSelected={isSelected}
+                        inDasar4={meldType === 'dasar4'}
+                        meldType={meldType}
+                        isClosingCandidate={isClosingCandidate}
+                        draggable={true}
+                        onDragStart={(e) => handleDragStart(e, card.id)}
+                        onClick={() => onSelectCard(card.id)}
+                      />
+                    </div>
+                  );
+                });
+              })()}
             </div>
 
             {/* Action Buttons for Discard / TAHAN / Tutup */}
@@ -709,6 +831,11 @@ export const GameTable: React.FC<GameTableProps> = ({
                     <strong className="text-amber-400">
                       {selectedCard.rank} {selectedCard.suit}
                     </strong>
+                    {isSelectedCardClosing && (
+                      <span className="ml-1.5 px-2 py-0.5 rounded-full text-[10px] font-black bg-amber-500/20 text-amber-300 border border-amber-400/60 animate-pulse">
+                        ★ Kartu Penutup (+{potentialCloseBonus}p)
+                      </span>
+                    )}
                   </span>
                 ) : (
                   <span className="italic">Klik kartu untuk memilih, atau drag ke Area Dasar 4</span>
@@ -716,19 +843,34 @@ export const GameTable: React.FC<GameTableProps> = ({
               </div>
 
               <div className="flex items-center gap-2">
-                {/* Wajib TAHAN Button */}
+                {/* Tombol TAHAN (Hanya dapat digunakan jika kurang dasar 4 atau kurang 1 pola lagi) */}
                 <button
                   type="button"
+                  disabled={!canToggleTahan && !humanPlayer.isTahan}
                   onClick={onToggleTahan}
-                  className={`flex items-center gap-1.5 px-3.5 py-2 rounded-xl text-xs sm:text-sm font-black transition-all cursor-pointer ${
+                  className={`flex items-center gap-1.5 px-3.5 py-2 rounded-xl text-xs sm:text-sm font-black transition-all ${
                     humanPlayer.isTahan
-                      ? 'bg-red-700 text-white border-2 border-red-400 ring-2 ring-red-400/50 shadow-lg shadow-red-600/30'
-                      : 'bg-slate-800 hover:bg-red-900/70 text-slate-200 border border-slate-600 hover:border-red-500'
+                      ? 'bg-red-700 text-white border-2 border-red-400 ring-2 ring-red-400/50 shadow-lg shadow-red-600/30 cursor-pointer'
+                      : canToggleTahan
+                      ? 'bg-gradient-to-r from-amber-600 to-amber-500 hover:from-amber-500 hover:to-amber-400 text-white border-2 border-amber-300 ring-2 ring-amber-400/50 shadow-md animate-pulse cursor-pointer'
+                      : 'bg-slate-800/80 text-slate-500 cursor-not-allowed border border-slate-700/60 opacity-60'
                   }`}
-                  title="Wajib tekan tombol Tahan yang bertanda akan ditutup dengan pemain yang kekurangan dasar ataupun pola yang belum pas!"
+                  title={
+                    humanPlayer.isTahan
+                      ? 'TAHAN AKTIF: Anda siap menutup ronde saat membuang kartu penutup!'
+                      : canToggleTahan
+                      ? `Syarat Terpenuhi: ${tahanEligibility.description} Tekan untuk mengaktifkan Tahan!`
+                      : 'Tombol Tahan tidak dapat digunakan. Hanya aktif jika kurang Dasar 4 atau kurang 1 pola lagi.'
+                  }
                 >
                   <ShieldAlert className="w-4 h-4 text-red-300" />
-                  <span>{humanPlayer.isTahan ? 'TAHAN DIAKTIFKAN ✓' : 'TOMBOL TAHAN'}</span>
+                  <span>
+                    {humanPlayer.isTahan
+                      ? 'TAHAN AKTIF ✓'
+                      : canToggleTahan
+                      ? `TOMBOL TAHAN (${tahanEligibility.reason === 'kurang_dasar_4' ? 'Kurang D4' : 'Kurang 1 Pola'})`
+                      : 'TOMBOL TAHAN (Terkunci)'}
+                  </span>
                 </button>
 
                 {/* Normal Discard Button */}
@@ -758,28 +900,44 @@ export const GameTable: React.FC<GameTableProps> = ({
                   </button>
                 )}
 
-                {/* Tutup & Menang Button (Shows Ace +150 / Joker +250 points, and requires TAHAN) */}
+                {/* Tutup & Menang Button (Shows Ace +150 / Joker +250 points, and WAJIB TAHAN) */}
                 {tutupCheck.canClose && !has4Jokers && (
                   <button
                     type="button"
-                    disabled={!isHumanTurn || turnPhase !== 'discard' || !isSelectedCardClosing}
+                    disabled={
+                      !isHumanTurn ||
+                      !isSelectedCardClosing
+                    }
                     onClick={() => {
                       if (!humanPlayer.isTahan) {
+                        // User must activate Tahan first
                         onToggleTahan();
+                        setTahanWarningToast('⚠️ Tombol TAHAN diaktifkan! Tekan Tutup sekali lagi untuk menutup permainan.');
+                        setTimeout(() => setTahanWarningToast(null), 4000);
+                        return;
                       }
                       if (selectedCardId) {
                         onTutupGame(selectedCardId);
                       }
                     }}
-                    className={`flex items-center gap-1.5 px-5 py-2 rounded-xl text-xs sm:text-sm font-black transition-all cursor-pointer ${
-                      isSelectedCardClosing
-                        ? 'bg-gradient-to-r from-emerald-500 via-amber-400 to-emerald-400 text-slate-950 shadow-xl shadow-amber-500/40 ring-2 ring-amber-300 animate-pulse'
-                        : 'bg-emerald-950 text-emerald-600 border border-emerald-800/60 opacity-60'
+                    className={`flex items-center gap-1.5 px-5 py-2 rounded-xl text-xs sm:text-sm font-black transition-all ${
+                      isSelectedCardClosing && humanPlayer.isTahan
+                        ? 'bg-gradient-to-r from-emerald-500 via-amber-400 to-emerald-400 text-slate-950 shadow-xl shadow-amber-500/40 ring-2 ring-amber-300 animate-pulse cursor-pointer'
+                        : isSelectedCardClosing && !humanPlayer.isTahan
+                        ? 'bg-amber-950 text-amber-300 border-2 border-amber-500/80 animate-bounce cursor-pointer'
+                        : 'bg-emerald-950 text-emerald-600 border border-emerald-800/60 opacity-60 cursor-not-allowed'
                     }`}
+                    title={
+                      !humanPlayer.isTahan
+                        ? 'Wajib menekan tombol Tahan terlebih dahulu sebelum menutup!'
+                        : 'Tutup permainan dan menangkan ronde ini'
+                    }
                   >
                     <Trophy className="w-4 h-4" />
                     <span>
-                      {isSelectedCardClosing
+                      {!humanPlayer.isTahan
+                        ? '⚠️ WAJIB TEKAN TAHAN SEBELUM TUTUP!'
+                        : isSelectedCardClosing
                         ? `TUTUP DENGAN ${selectedCard?.rank} (+${potentialCloseBonus} POIN)!`
                         : 'Pilih Penutup (Ace +150 / Joker +250)'}
                     </span>
@@ -789,7 +947,110 @@ export const GameTable: React.FC<GameTableProps> = ({
             </div>
           </div>
         </div>
-      </main>
+        </main>
+
+        {/* KOLOM SEBELAH KANAN: Tabel Skor Peringkat & Real-time Live Chat */}
+        <div className="hidden lg:flex w-64 xl:w-72 shrink-0 flex-col h-full gap-2 overflow-hidden">
+          <div className="flex-1 overflow-y-auto min-h-0">
+            <LeaderboardScoreTable
+              players={players}
+              activePlayerIndex={activePlayerIndex}
+              localPlayerId={localPlayerId}
+              roundNumber={roundNumber}
+            />
+          </div>
+          <div className="h-64 shrink-0 overflow-hidden">
+            <ChatBox
+              messages={chatMessages}
+              onSendMessage={onSendMessage || (() => {})}
+              localPlayer={humanPlayer}
+              isOnlineRoom={isOnlineRoom}
+            />
+          </div>
+        </div>
+      </div>
+
+      {/* Mobile/Compact Leaderboard Bar Chart Modal */}
+      {showLeftBarModal && (
+        <div className="fixed inset-0 z-50 bg-black/80 backdrop-blur-sm flex items-center justify-center p-3 animate-in fade-in">
+          <div className="w-full max-w-md h-[80vh] flex flex-col bg-slate-950 border border-emerald-700/80 rounded-2xl overflow-hidden shadow-2xl">
+            <div className="flex justify-end p-2 bg-slate-900 border-b border-slate-800">
+              <button
+                type="button"
+                onClick={() => setShowLeftBarModal(false)}
+                className="px-3 py-1 rounded-lg bg-slate-800 text-slate-300 hover:text-white text-xs font-bold cursor-pointer"
+              >
+                Tutup ✕
+              </button>
+            </div>
+            <div className="flex-1 overflow-hidden p-2">
+              <LeaderboardBarChart
+                players={players}
+                activePlayerIndex={activePlayerIndex}
+                localPlayerId={localPlayerId}
+              />
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Mobile/Compact Score Table Modal */}
+      {showRightScoreModal && (
+        <div className="fixed inset-0 z-50 bg-black/80 backdrop-blur-sm flex items-center justify-center p-3 animate-in fade-in">
+          <div className="w-full max-w-md max-h-[85vh] flex flex-col bg-slate-950 border border-emerald-700/80 rounded-2xl overflow-hidden shadow-2xl">
+            <div className="flex justify-end p-2 bg-slate-900 border-b border-slate-800">
+              <button
+                type="button"
+                onClick={() => setShowRightScoreModal(false)}
+                className="px-3 py-1 rounded-lg bg-slate-800 text-slate-300 hover:text-white text-xs font-bold cursor-pointer"
+              >
+                Tutup ✕
+              </button>
+            </div>
+            <div className="flex-1 overflow-y-auto p-2">
+              <LeaderboardScoreTable
+                players={players}
+                activePlayerIndex={activePlayerIndex}
+                localPlayerId={localPlayerId}
+                roundNumber={roundNumber}
+              />
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Mobile/Compact Chat Box Modal */}
+      {showChatModal && (
+        <div className="fixed inset-0 z-50 bg-black/80 backdrop-blur-sm flex items-center justify-center p-3 animate-in fade-in">
+          <div className="w-full max-w-md h-[75vh] flex flex-col bg-slate-950 border border-emerald-700/80 rounded-2xl overflow-hidden shadow-2xl">
+            <div className="flex justify-end p-2 bg-slate-900 border-b border-slate-800">
+              <button
+                type="button"
+                onClick={() => setShowChatModal(false)}
+                className="px-3 py-1 rounded-lg bg-slate-800 text-slate-300 hover:text-white text-xs font-bold cursor-pointer"
+              >
+                Tutup ✕
+              </button>
+            </div>
+            <div className="flex-1 overflow-hidden p-2">
+              <ChatBox
+                messages={chatMessages}
+                onSendMessage={onSendMessage || (() => {})}
+                localPlayer={humanPlayer}
+                isOnlineRoom={isOnlineRoom}
+              />
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Toast Alert for Tahan Warning */}
+      {tahanWarningToast && (
+        <div className="fixed top-16 left-1/2 -translate-x-1/2 z-50 bg-amber-500 text-slate-950 font-black text-xs sm:text-sm px-4 py-2 rounded-xl shadow-2xl border-2 border-amber-300 flex items-center gap-2 animate-bounce">
+          <ShieldAlert className="w-5 h-5 text-slate-950" />
+          <span>{tahanWarningToast}</span>
+        </div>
+      )}
 
       {/* Discard History Modal */}
       <DiscardHistoryModal

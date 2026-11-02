@@ -23,7 +23,7 @@ export interface Card {
   deckIndex: number; // 0 or 1 (which of the 2 decks)
 }
 
-export type MeldType = 'dasar4' | 'run' | 'tris';
+export type MeldType = 'dasar4' | 'run' | 'tris' | 'fourhand';
 
 export interface Meld {
   type: MeldType;
@@ -79,6 +79,21 @@ export interface JokerSuggestion {
   points: number;
 }
 
+export interface ChatMessage {
+  id: string;
+  senderId: string;
+  senderName: string;
+  senderAvatar: string;
+  text: string;
+  timestamp: number;
+}
+
+export interface TahanCheckResult {
+  canTahan: boolean;
+  reason?: 'kurang_dasar_4' | 'kurang_1_pola';
+  description: string;
+}
+
 export interface GameState {
   gameMode: GameMode;
   stage: GameStage;
@@ -105,4 +120,5 @@ export interface GameState {
   hostUid?: string;
   isGameOver?: boolean; // True when any player reaches >= 1000 points
   grandWinnerId?: string | null;
+  chatMessages?: ChatMessage[];
 }

@@ -6,6 +6,7 @@ import {
   GameState,
   Player,
   TurnPhase,
+  ChatMessage,
 } from './game/types';
 import {
   createRemiDeck,
@@ -17,6 +18,7 @@ import {
   evaluateBestMelds,
   sortHandBySuit,
   getClosingBonus,
+  checkTahanEligibility,
 } from './game/remiRules';
 import { TitleScreen } from './components/TitleScreen';
 import { GameTable } from './components/GameTable';
@@ -32,6 +34,7 @@ import {
   subscribeToFirebaseRoom,
   fetchFirebaseRoom,
   testFirestoreConnection,
+  sendRoomChatMessage,
 } from './firebase';
 
 const BOT_CONFIGS = [
@@ -694,13 +697,15 @@ export default function App() {
     const card = gameState.players[effectiveLocalIndex].hand.find((c) => c.id === closeCardId);
     if (!card) return;
 
-    // Enforce Tahan requirement: player MUST activate Tahan before/when closing
+    // Enforce Tahan requirement: pemain wajib menekan tombol tahan sebelum menutup!
     if (!gameState.players[effectiveLocalIndex].isTahan) {
-      setGameState((prev) => {
-        const updated = [...prev.players];
-        updated[effectiveLocalIndex] = { ...updated[effectiveLocalIndex], isTahan: true };
-        return { ...prev, players: updated };
-      });
+      sounds.playError();
+      const actionDesc = '⚠️ Wajib menekan tombol TAHAN sebelum menutup permainan!';
+      setGameState((prev) => ({
+        ...prev,
+        lastAction: actionDesc,
+      }));
+      return;
     }
 
     const tutupCheck = checkCanTutup(
@@ -718,12 +723,29 @@ export default function App() {
 
   // Human: Toggle TAHAN button
   const handleToggleTahan = () => {
+    const hand = gameState.players[effectiveLocalIndex].hand;
+    const customDasar = gameState.players[effectiveLocalIndex].customDasar4CardIds;
+    const currentTahan = gameState.players[effectiveLocalIndex].isTahan;
+
+    // Aturan: Tombol tahan hanya dapat digunakan jika kurang Dasar 4 atau kurang 1 pola lagi!
+    if (!currentTahan) {
+      const eligibility = checkTahanEligibility(hand, customDasar);
+      if (!eligibility.canTahan) {
+        sounds.playError();
+        setGameState((prev) => ({
+          ...prev,
+          lastAction: `⚠️ ${eligibility.description}`,
+        }));
+        return;
+      }
+    }
+
     sounds.playCardSnap();
     const playerName = gameState.players[effectiveLocalIndex]?.name || 'Pemain';
 
     setGameState((prev) => {
       const updated = [...prev.players];
-      const nextTahan = !updated[effectiveLocalIndex].isTahan;
+      const nextTahan = !currentTahan;
       updated[effectiveLocalIndex] = { ...updated[effectiveLocalIndex], isTahan: nextTahan };
       const actionDesc = `${playerName} ${nextTahan ? 'mengaktifkan TAHAN! ⚠️' : 'menonaktifkan Tahan'}`;
 
@@ -732,6 +754,81 @@ export default function App() {
       return newState;
     });
   };
+
+  // Real-time Chat: Handle sending messages
+  const handleSendMessage = useCallback(
+    (text: string) => {
+      const newMsg: ChatMessage = {
+        id: `msg_${Date.now()}_${Math.random().toString(36).substring(2, 7)}`,
+        senderId: localPlayer.id,
+        senderName: localPlayer.name,
+        senderAvatar: localPlayer.avatar,
+        text,
+        timestamp: Date.now(),
+      };
+
+      setGameState((prev) => {
+        const currentMessages = prev.chatMessages || [];
+        const updatedMessages = [...currentMessages, newMsg];
+        const newState: GameState = {
+          ...prev,
+          chatMessages: updatedMessages,
+        };
+
+        if (newState.gameMode === 'player' && newState.roomCode) {
+          sendRoomChatMessage(newState.roomCode, newMsg).catch((err) => {
+            console.warn('Failed to send room chat message:', err);
+          });
+        }
+
+        return newState;
+      });
+
+      // Bot banter response in bot mode
+      if (gameState.gameMode === 'bot') {
+        const activeBots = gameState.players.filter((p) => !p.isHuman && p.isOccupied);
+        if (activeBots.length > 0) {
+          const randomBot = activeBots[Math.floor(Math.random() * activeBots.length)];
+          const lower = text.toLowerCase();
+          let reply = 'Mantap, lanjut main!';
+          if (lower.includes('tahan')) {
+            reply = 'Waduh, sudah tahan ya? Aku harus cepat-cepat!';
+          } else if (lower.includes('joker')) {
+            reply = 'Joker ada di mana ya? Rahasia dong!';
+          } else if (lower.includes('tutup')) {
+            reply = 'Siap-siap, jangan sampai kecolongan!';
+          } else if (lower.includes('buang') || lower.includes('kanan')) {
+            reply = 'Tenang, aku pilihkan buangan aman!';
+          } else {
+            const canned = [
+              'Semoga dapat kartu bagus putaran ini!',
+              'Ayo fokus, poin sudah dekat 1000!',
+              'Hati-hati buangan sebelah kanan ya!',
+              'Seru banget meja ini!',
+            ];
+            reply = canned[Math.floor(Math.random() * canned.length)];
+          }
+
+          setTimeout(() => {
+            const botMsg: ChatMessage = {
+              id: `msg_bot_${Date.now()}_${Math.random().toString(36).substring(2, 6)}`,
+              senderId: randomBot.id,
+              senderName: randomBot.name,
+              senderAvatar: randomBot.avatar,
+              text: reply,
+              timestamp: Date.now(),
+            };
+            setGameState((prev) => ({
+              ...prev,
+              chatMessages: [...(prev.chatMessages || []), botMsg],
+            }));
+          }, 1000);
+        }
+      }
+    },
+    [localPlayer.id, localPlayer.name, localPlayer.avatar, gameState.gameMode, gameState.players]
+  );
+
 
   // Human: Custom Dasar 4 selection via drag-and-drop or click
   const handleSetCustomDasar4 = (ids: string[]) => {
@@ -1102,6 +1199,8 @@ export default function App() {
           lastActionText={gameState.lastAction}
           onClaim4Jokers={handleClaim4Jokers}
           onUpdateHand={handleUpdateHand}
+          onSendMessage={handleSendMessage}
+          chatMessages={gameState.chatMessages || []}
         />
       )}
 

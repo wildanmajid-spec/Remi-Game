@@ -5,6 +5,7 @@ import {
   isDasar4,
   isValidRun,
   isValidTris,
+  isValidFourhand,
   calculatePlayerScore,
   checkCanTutup,
   getCardBasePoint,
@@ -12,6 +13,8 @@ import {
   check4Jokers,
   findJokerSuggestions,
   WINNING_SCORE,
+  checkTahanEligibility,
+  evaluateHandTutupStatus,
 } from './remiRules';
 import { Card } from './types';
 
@@ -328,5 +331,198 @@ test('New Requirement: WINNING_SCORE is 1000 points', () => {
   assert.equal(WINNING_SCORE, 1000);
 });
 
+test('New Requirement: checkTahanEligibility - only enabled if kurang dasar 4 or kurang 1 pola lagi', () => {
+  // 1. Hand has NO Dasar 4 and NO 3 consecutive suited cards -> CANNOT Tahan
+  const randomHand = [
+    makeCard('2', 'spade'),
+    makeCard('5', 'heart'),
+    makeCard('8', 'diamond'),
+    makeCard('J', 'club'),
+    makeCard('K', 'spade'),
+    makeCard('3', 'heart'),
+  ];
+  const cannotTahanResult = checkTahanEligibility(randomHand);
+  assert.equal(cannotTahanResult.canTahan, false);
+  assert.ok(cannotTahanResult.description.includes('Tombol Tahan tidak dapat digunakan'));
 
+  // 2. Hand has "Kurang Dasar 4" (e.g. 5♠, 6♠, 7♠ - 3 suited consecutive cards) -> CAN Tahan!
+  const kurangDasarHand = [
+    makeCard('5', 'spade'),
+    makeCard('6', 'spade'),
+    makeCard('7', 'spade'),
+    makeCard('2', 'heart'),
+    makeCard('9', 'diamond'),
+  ];
+  const kurangDasarResult = checkTahanEligibility(kurangDasarHand);
+  assert.equal(kurangDasarResult.canTahan, true);
+  assert.equal(kurangDasarResult.reason, 'kurang_dasar_4');
 
+  // 3. Hand has Dasar 4 and "Kurang 1 pola lagi" (Dasar 4 + pair of 8s) -> CAN Tahan!
+  const kurang1PolaHand = [
+    makeCard('4', 'heart', 'h4'),
+    makeCard('5', 'heart', 'h5'),
+    makeCard('6', 'heart', 'h6'),
+    makeCard('7', 'heart', 'h7'),
+    makeCard('8', 'spade', 's8'),
+    makeCard('8', 'diamond', 'd8'), // Pair of 8s (lacking 1 for Tris)
+  ];
+  const kurang1PolaResult = checkTahanEligibility(kurang1PolaHand);
+  assert.equal(kurang1PolaResult.canTahan, true);
+  assert.equal(kurang1PolaResult.reason, 'kurang_1_pola');
+
+  // 4. Hand ready to close (14 cards with all melds + Ace) -> CAN Tahan!
+  const winningHand: Card[] = [
+    makeCard('4', 'spade', 'c1'),
+    makeCard('5', 'spade', 'c2'),
+    makeCard('6', 'spade', 'c3'),
+    makeCard('7', 'spade', 'c4'),
+    makeCard('9', 'diamond', 'c5'),
+    makeCard('10', 'diamond', 'c6'),
+    makeCard('J', 'diamond', 'c7'),
+    makeCard('Q', 'heart', 'c8'),
+    makeCard('Q', 'club', 'c9'),
+    makeCard('Q', 'diamond', 'c10'),
+    makeCard('3', 'heart', 'c11'),
+    makeCard('3', 'spade', 'c12'),
+    makeCard('3', 'diamond', 'c13'),
+    makeCard('A', 'heart', 'c14'),
+  ];
+  const readyToCloseResult = checkTahanEligibility(winningHand);
+  assert.equal(readyToCloseResult.canTahan, true);
+  assert.equal(readyToCloseResult.reason, 'kurang_1_pola');
+});
+
+test('New Requirement: isValidFourhand recognizes 4 cards of same rank with 4 distinct suits', () => {
+  const validFourhand = [
+    makeCard('K', 'heart'),
+    makeCard('K', 'spade'),
+    makeCard('K', 'diamond'),
+    makeCard('K', 'club'),
+  ];
+  assert.equal(isValidFourhand(validFourhand), true);
+
+  // 3 cards is NOT fourhand
+  assert.equal(isValidFourhand(validFourhand.slice(0, 3)), false);
+
+  // Duplicate suit is NOT valid fourhand
+  const duplicateSuit = [
+    makeCard('K', 'heart'),
+    makeCard('K', 'spade'),
+    makeCard('K', 'heart'),
+    makeCard('K', 'club'),
+  ];
+  assert.equal(isValidFourhand(duplicateSuit), false);
+
+  // Fourhand with Joker is allowed if allowJoker is true
+  const fourhandWithJoker = [
+    makeCard('9', 'spade'),
+    makeCard('9', 'heart'),
+    makeCard('9', 'diamond'),
+    makeCard('JOKER', 'joker'),
+  ];
+  assert.equal(isValidFourhand(fourhandWithJoker, false), false);
+  assert.equal(isValidFourhand(fourhandWithJoker, true), true);
+});
+
+test('New Requirement: Tutup FAILS if there is any remaining deadwood (all 13 cards must be plus)', () => {
+  // 14 cards hand:
+  // Dasar 4: 4♠, 5♠, 6♠, 7♠ (4 cards)
+  // Tris: Q♥, Q♣, Q♦ (3 cards)
+  // Tris: 3♥, 3♠, 3♦ (3 cards)
+  // Total in meld = 10 cards.
+  // Deadwood: 3 cards (9♦, 10♣, 8♥) -> CANNOT CLOSE even with Ace as 14th card!
+  const handWithDeadwood: Card[] = [
+    makeCard('4', 'spade', 'c1'),
+    makeCard('5', 'spade', 'c2'),
+    makeCard('6', 'spade', 'c3'),
+    makeCard('7', 'spade', 'c4'),
+    makeCard('Q', 'heart', 'c5'),
+    makeCard('Q', 'club', 'c6'),
+    makeCard('Q', 'diamond', 'c7'),
+    makeCard('3', 'heart', 'c8'),
+    makeCard('3', 'spade', 'c9'),
+    makeCard('3', 'diamond', 'c10'),
+    makeCard('9', 'diamond', 'dead1'), // Deadwood
+    makeCard('10', 'club', 'dead2'),   // Deadwood
+    makeCard('8', 'heart', 'dead3'),   // Deadwood
+    makeCard('A', 'heart', 'c14'),      // Ace penutup
+  ];
+
+  const canClose = checkCanTutup(handWithDeadwood);
+  assert.equal(canClose.canClose, false, 'Should NOT be able to close when deadwood exists');
+
+  const status = evaluateHandTutupStatus(handWithDeadwood);
+  assert.equal(status.canClose, false);
+  assert.equal(status.hasDasar4, true);
+  assert.ok(status.deadwoodCount > 0);
+  assert.ok(status.detailText.includes('Belum bisa tutup'));
+});
+
+test('New Requirement: Tutup SUCCEEDS when 13 cards form Dasar 4 + Fourhand + Run 5 with 0 deadwood and Joker close', () => {
+  const winningHandWithFourhand: Card[] = [
+    // Dasar 4 (4 cards)
+    makeCard('2', 'heart', 'h2'),
+    makeCard('3', 'heart', 'h3'),
+    makeCard('4', 'heart', 'h4'),
+    makeCard('5', 'heart', 'h5'),
+    // Fourhand (4 cards)
+    makeCard('7', 'spade', 's7'),
+    makeCard('7', 'heart', 'h7'),
+    makeCard('7', 'diamond', 'd7'),
+    makeCard('7', 'club', 'c7'),
+    // Run 5 (5 cards)
+    makeCard('9', 'club', 'c9'),
+    makeCard('10', 'club', 'c10'),
+    makeCard('J', 'club', 'cj'),
+    makeCard('Q', 'club', 'cq'),
+    makeCard('K', 'club', 'ck'),
+    // 14th card: Joker penutup (+250 bonus)
+    makeCard('JOKER', 'joker', 'close_joker'),
+  ];
+
+  const canClose = checkCanTutup(winningHandWithFourhand);
+  assert.equal(canClose.canClose, true);
+  assert.equal(canClose.closingCardCandidates.some((c) => c.rank === 'JOKER'), true);
+
+  const status = evaluateHandTutupStatus(winningHandWithFourhand);
+  assert.equal(status.canClose, true);
+  assert.equal(status.is13AllPlus, true);
+  assert.equal(status.deadwoodCount, 0);
+  assert.ok(status.statusText.includes('Siap Tutup Permainan') || status.statusText.includes('13 Kartu'));
+});
+
+test('User Reported Case: 13-card hand with 10-A Hearts (Dasar 5), J-A Diamonds, 8-JK-10 Diamonds, and A Spade as closing card', () => {
+  const userHand: Card[] = [
+    makeCard('10', 'heart', 'h10'),
+    makeCard('J', 'heart', 'hj'),
+    makeCard('Q', 'heart', 'hq'),
+    makeCard('K', 'heart', 'hk'),
+    makeCard('A', 'heart', 'ha'),
+    makeCard('8', 'diamond', 'd8'),
+    makeCard('JOKER', 'joker', 'djk'),
+    makeCard('10', 'diamond', 'd10'),
+    makeCard('J', 'diamond', 'dj'),
+    makeCard('Q', 'diamond', 'dq'),
+    makeCard('K', 'diamond', 'dk'),
+    makeCard('A', 'diamond', 'da'),
+    makeCard('A', 'spade', 'sa'), // Kartu penutup yang dipilih user!
+  ];
+
+  // 1. Check can tutup
+  const canClose = checkCanTutup(userHand);
+  assert.equal(canClose.canClose, true, 'User hand MUST be able to close!');
+  assert.equal(canClose.closingCardCandidates.some((c) => c.id === 'sa'), true, 'A spade must be a valid closing card!');
+
+  // 2. Evaluate hand status
+  const status = evaluateHandTutupStatus(userHand);
+  assert.equal(status.canClose, true);
+  assert.equal(status.hasDasar4, true);
+  assert.equal(status.deadwoodCount, 0);
+
+  // 3. Calculate score when closing with A spade
+  const closeAce = userHand.find((c) => c.id === 'sa')!;
+  const score = calculatePlayerScore(userHand, undefined, true, closeAce);
+  assert.equal(score.deadwoodPoints, 0, 'No deadwood penalty!');
+  assert.equal(score.closingBonus, 150, 'A spade closing bonus is +150!');
+  assert.ok(score.totalPoints > 200, 'Total score should include meld points + 150 closing bonus');
+});

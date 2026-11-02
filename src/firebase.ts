@@ -15,9 +15,10 @@ import {
   setDoc,
   onSnapshot,
   serverTimestamp,
+  arrayUnion,
 } from 'firebase/firestore';
 import firebaseConfig from '../firebase-applet-config.json';
-import { GameState } from './game/types';
+import { GameState, ChatMessage } from './game/types';
 
 // Initialize Firebase App
 const app = initializeApp(firebaseConfig);
@@ -204,3 +205,31 @@ export async function fetchFirebaseRoom(roomCode: string): Promise<GameState | n
     return null;
   }
 }
+
+/**
+ * Send real-time chat message to Firebase Firestore room
+ */
+export async function sendRoomChatMessage(
+  roomCode: string,
+  message: ChatMessage
+): Promise<void> {
+  if (!roomCode) return;
+  const path = `rooms/${roomCode}`;
+  try {
+    const docRef = doc(db, 'rooms', roomCode);
+    await setDoc(
+      docRef,
+      {
+        gameState: {
+          chatMessages: arrayUnion(message),
+        },
+        updatedAt: serverTimestamp(),
+      },
+      { merge: true }
+    );
+  } catch (error) {
+    handleFirestoreError(error, OperationType.WRITE, path);
+  }
+}
+
+

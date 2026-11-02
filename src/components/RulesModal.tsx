@@ -87,13 +87,16 @@ export const RulesModal: React.FC<RulesModalProps> = ({ isOpen, onClose }) => {
                   <strong className="text-emerald-400">Dasar 4 (Wajib Paling Utama)</strong>: Minimal <strong>4 kartu berurutan bunga sama murni tanpa Joker</strong> (contoh: 4♥-5♥-6♥-7♥ atau A♠-2♠-3♠-4♠).
                 </li>
                 <li>
-                  <strong>Urutan 3+</strong>: 3 atau lebih kartu berurutan bunga sama.
+                  <strong>Berurutan 3</strong>: 3 atau lebih kartu berurutan sejenis (boleh Joker setelah Dasar 4 ada).
                 </li>
                 <li>
-                  <strong>Tris</strong>: 3 atau 4 kartu angka sama dengan bunga berbeda (contoh: 7♠-7♥-7♦).
+                  <strong>Tris</strong>: 3 kartu angka atau gambar sama dengan <strong>3 bunga berbeda</strong> (contoh: 7♠-7♥-7♦).
                 </li>
                 <li>
-                  <strong className="text-purple-300">Joker Pengisi Semua Kartu</strong>: Joker dapat mengisi semua kartu dan membentuk pola yang diinginkan. Tekan tombol <strong>🃏 Pola Joker</strong> untuk melihat daftar pilihan pola yang mendekati dari kartu yang Anda miliki!
+                  <strong className="text-amber-300">Fourhand (Pitingan)</strong>: 4 kartu angka atau gambar sama dengan <strong>4 bunga berbeda</strong> (contoh: K♠-K♥-K♦-K♣).
+                </li>
+                <li>
+                  <strong className="text-purple-300">Joker Pengisi Semua Kartu</strong>: Joker dapat mengisi semua kartu dan membentuk pola yang diinginkan setelah Dasar 4 terpenuhi. Tekan tombol <strong>🃏 Pola Joker</strong> untuk melihat daftar saran pola!
                 </li>
               </ul>
             </div>
@@ -134,16 +137,19 @@ export const RulesModal: React.FC<RulesModalProps> = ({ isOpen, onClose }) => {
               5
             </span>
             <div>
-              <h4 className="font-bold text-amber-300 mb-1">Poin Kartu Penutup Tertinggi & Syarat Menutup</h4>
+              <h4 className="font-bold text-amber-300 mb-1">Syarat Mutlak Menutup Permainan & Poin Penutup</h4>
               <p className="text-xs text-slate-300 leading-relaxed mb-1.5">
-                Pemain dapat menutup kartu jika 13 kartunya telah tersusun dalam kombinasi sah (termasuk Dasar 4), dan <strong>kartu penutup ke-14 WAJIB Ace atau Joker</strong>.
+                Untuk menutup permainan, pemain <strong>wajib mendapatkan nilai PLUS SEMUANYA</strong>:
               </p>
               <ul className="list-disc list-inside text-xs text-slate-300 space-y-1">
                 <li>
-                  <strong className="text-amber-400">Poin Langsung Nilai Tertinggi</strong>: Kartu penutup <strong>tidak dihitung lagi poin dasarnya</strong>, melainkan langsung mendapat nilai tertinggi kartu tersebut: <strong>+150 poin untuk Ace</strong> dan <strong>+250 poin untuk Joker</strong>!
+                  <strong>13 Kartu Harus Habis Terbagi Masuk Pola</strong>: Tepat 13 kartu wajib masuk ke pola Dasar 4, Berurutan 3, Tris, atau Fourhand dengan <strong>0 kartu sisa bernilai minus</strong>.
                 </li>
                 <li>
-                  <strong className="text-red-400">Tombol Tahan</strong>: Wajib mengaktifkan tombol TAHAN saat bersiap menutup untuk mengunci lawan.
+                  <strong>Kartu ke-14 adalah Penutup</strong>: Kartu ke-14 <strong>WAJIB Ace atau Joker</strong>. Kartu penutup tidak dihitung poin dasarnya, melainkan langsung nilai tertinggi: <strong>+150 poin untuk Ace</strong> dan <strong>+250 poin untuk Joker</strong>!
+                </li>
+                <li>
+                  <strong className="text-red-400">Wajib Tombol TAHAN</strong>: Pemain wajib menekan tombol TAHAN sebelum menutup permainan. Tombol Tahan hanya aktif jika kurang Dasar 4 atau kurang 1 pola lagi.
                 </li>
               </ul>
             </div>

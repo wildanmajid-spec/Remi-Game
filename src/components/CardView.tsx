@@ -12,6 +12,8 @@ interface CardViewProps {
   size?: 'sm' | 'md' | 'lg';
   showPoints?: boolean;
   inDasar4?: boolean;
+  meldType?: 'dasar4' | 'run' | 'tris' | 'fourhand' | null;
+  isClosingCandidate?: boolean;
   draggable?: boolean;
   onDragStart?: (e: React.DragEvent) => void;
   onDragEnd?: (e: React.DragEvent) => void;
@@ -27,6 +29,8 @@ export const CardView: React.FC<CardViewProps> = ({
   size = 'md',
   showPoints = true,
   inDasar4 = false,
+  meldType = null,
+  isClosingCandidate = false,
   draggable = false,
   onDragStart,
   onDragEnd,
@@ -71,6 +75,25 @@ export const CardView: React.FC<CardViewProps> = ({
 
   const basePoints = getCardBasePoint(card);
 
+  const getMeldStyle = () => {
+    if (isClosingCandidate && isSelected) {
+      return 'border-2 border-amber-400 bg-amber-50 ring-3 ring-amber-400 shadow-xl shadow-amber-500/40';
+    }
+    if (inDasar4 || meldType === 'dasar4') {
+      return 'border-2 border-emerald-500 bg-emerald-50/95 ring-1 ring-emerald-400/70 shadow-xs shadow-emerald-500/20';
+    }
+    if (meldType === 'run') {
+      return 'border-2 border-cyan-500 bg-cyan-50/95 ring-1 ring-cyan-400/70 shadow-xs shadow-cyan-500/20';
+    }
+    if (meldType === 'tris') {
+      return 'border-2 border-purple-500 bg-purple-50/95 ring-1 ring-purple-400/70 shadow-xs shadow-purple-500/20';
+    }
+    if (meldType === 'fourhand') {
+      return 'border-2 border-amber-500 bg-amber-50/95 ring-1 ring-amber-400/70 shadow-xs shadow-amber-500/20';
+    }
+    return 'border border-slate-300 bg-white';
+  };
+
   return (
     <button
       type="button"
@@ -86,8 +109,7 @@ export const CardView: React.FC<CardViewProps> = ({
         ${disabled ? 'opacity-50 cursor-not-allowed' : 'cursor-grab active:cursor-grabbing hover:-translate-y-1.5'}
         ${isSelected ? '-translate-y-3.5 ring-3 ring-amber-400 shadow-xl shadow-amber-500/35' : 'shadow-md hover:shadow-lg'}
         ${highlight ? 'ring-2 ring-emerald-400' : ''}
-        ${inDasar4 ? 'border-2 border-emerald-500 bg-emerald-50/95 ring-1 ring-emerald-400/60' : 'bg-white'}
-        border border-slate-300
+        ${getMeldStyle()}
         flex flex-col justify-between p-1.5 overflow-hidden
       `}
     >
@@ -106,6 +128,32 @@ export const CardView: React.FC<CardViewProps> = ({
         {showPoints && (
           <span className="text-[8px] font-black px-1 py-0.5 rounded bg-slate-100 text-slate-700 border border-slate-200 shadow-2xs mt-0.5">
             {basePoints}p
+          </span>
+        )}
+        {/* Meld Pill Indicator */}
+        {(inDasar4 || meldType === 'dasar4') && (
+          <span className="text-[7px] font-black px-1 py-0.2 rounded bg-emerald-600 text-white mt-0.5 shadow-2xs uppercase">
+            Dasar
+          </span>
+        )}
+        {meldType === 'run' && !inDasar4 && (
+          <span className="text-[7px] font-black px-1 py-0.2 rounded bg-cyan-600 text-white mt-0.5 shadow-2xs uppercase">
+            Urutan
+          </span>
+        )}
+        {meldType === 'tris' && (
+          <span className="text-[7px] font-black px-1 py-0.2 rounded bg-purple-600 text-white mt-0.5 shadow-2xs uppercase">
+            Tris
+          </span>
+        )}
+        {meldType === 'fourhand' && (
+          <span className="text-[7px] font-black px-1 py-0.2 rounded bg-amber-600 text-white mt-0.5 shadow-2xs uppercase">
+            4-Hand
+          </span>
+        )}
+        {isClosingCandidate && (
+          <span className="text-[7px] font-black px-1 py-0.2 rounded bg-amber-400 text-slate-950 mt-0.5 shadow-2xs uppercase animate-pulse">
+            ★Tutup
           </span>
         )}
       </div>
